@@ -47,3 +47,10 @@ def test_unreadable_means_always_capture():
         h = parse(text)
         assert h.always
         assert h.open_at(at(0, 3))
+
+
+def test_server_to_compact_example():
+    # business_hours.to_compact() の docstring の例そのもの
+    h = parse("12345 11:00-15:00;12345 17:00-22:00")
+    assert h.open_at(at(0, 12)) and h.open_at(at(4, 21, 59))
+    assert not h.open_at(at(0, 16)) and not h.open_at(at(5, 12))
