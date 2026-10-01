@@ -5,3 +5,5 @@
 """
 
 VERSION = "pi-0.1.0"
+# サーバの version_code（整数）。版を上げるたびに 1 つ増やす
+VERSION_CODE = 1

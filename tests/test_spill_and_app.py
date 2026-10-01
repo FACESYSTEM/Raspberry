@@ -3,7 +3,7 @@ import zipfile
 
 import numpy as np
 
-from fservice_pi.app import App, encode_jpeg, in_windows, parse_windows
+from fservice_pi.app import App, encode_jpeg, local_hours
 from fservice_pi.camera import Frame
 from fservice_pi.config import Config
 from fservice_pi.spill import Spill
@@ -42,14 +42,16 @@ def test_spill_refuses_when_disk_low(tmp_path):
     s.stop()
 
 
-def test_windows():
-    w = parse_windows(["10:55-21:15", "23:00-02:00"])
-    assert in_windows(w, 11 * 60)
-    assert not in_windows(w, 22 * 60)
-    assert in_windows(w, 23 * 60 + 30)
-    assert in_windows(w, 1 * 60)
-    assert not in_windows(w, 3 * 60)
-    assert in_windows([], 3 * 60)
+def test_local_windows_every_day():
+    import datetime as dt
+    h = local_hours(["10:55-21:15", "23:00-02:00"])
+    d = dt.datetime(2026, 10, 1)
+    assert h.open_at(d.replace(hour=11))
+    assert not h.open_at(d.replace(hour=22))
+    assert h.open_at(d.replace(hour=23, minute=30))
+    assert h.open_at(d.replace(hour=1))
+    assert not h.open_at(d.replace(hour=3))
+    assert local_hours([]).open_at(d.replace(hour=3))
 
 
 def test_encode_jpeg_respects_entry_limit():

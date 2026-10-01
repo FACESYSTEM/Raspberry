@@ -30,7 +30,7 @@ ZIP（無圧縮・<t>r.jpg・60 枚か 10 秒・8MB 以下）→ 送信待ち（
 POST /v1/detframes
 ```
 
-並行して、心拍スレッドが `GET /v1/config`（30 秒ごと）を叩いて `face_params` を受け取り、
+並行して、心拍スレッドが `GET /v1/config`（30 秒ごと）を叩いて撮影窓・`face_enabled`・`face_params` を受け取り、
 見張りが 60 秒ごとに申告（`kind:"stat"`）を `POST /v1/detlog` へ送る。
 
 ## Android 版との対応
@@ -44,7 +44,7 @@ POST /v1/detframes
 | `detFramesFlush`（束・10 秒・60 枚） | `uploader.Batcher` | 束の時計は壁時計 |
 | 送れなければ未送信で溜める | `uploader.Outbox`（ディスク） | 回線断でも撮影は止めない |
 | 申告 `spill_*`・`raw_sent` など | 同じ名前で出す | |
-| 撮影ウィンドウ（サーバ配信） | 設定の `capture.windows` | **当面は端末の設定で持つ**（下の「確認が要ること」） |
+| 撮影ウィンドウ（サーバ配信） | 同じ（心拍の `business_hours`） | サーバと繋がる前だけ設定の `capture.windows` |
 | DPC・F-GUARD・FCM による起こし合い | **systemd の自動再起動＋ウォッチドッグ** | 背景実行の禁止・凍結・HOME 設定の問題は Linux には無い |
 | 端末のログ（bugreport は人が押す） | `journalctl -u fservice-pi` | 全部取れる |
 
@@ -75,19 +75,27 @@ POST /v1/detframes
 **撮れたコマ ＝ 送れた ＋ 送信待ち ＋ 間引いた ＋ 退避中 ＋ 捨てた（理由別）** が常に成り立つ。
 作り物のカメラと仮のサーバで確かめた（745 ＝ 360 ＋ 176 ＋ 209 ＋ 0）。
 
-## 確認が要ること（サーバ側の実物を見て決める）
+## サーバとのやりとり（Api.kt・f_voice_web.py の実物に合わせた）
 
-手元にあるのは specs.md などの資料だけで、サーバ（`f_voice_web.py`）と Android の `Api.kt` の実物は見ていない。
-次の 6 点は資料から読める範囲で作ってあり、実物と合わせる必要がある。
+| 口 | いつ | 中身 |
+|---|---|---|
+| `POST /v1/announce` | トークンが無い間、心拍の間隔で | `terminal_instance_id`・`device_model`・`os_version`・`app`（`jp.facesystem.fservice.pi`）・`version_code`。管理画面で店に割り当てると `assigned=true` とトークンが返る。トークンは `/var/lib/fservice-pi/token`（0600）に保存 |
+| `GET /v1/config` | 30 秒ごと | クエリは Api.kt と同じ名前（`version`・`temp`・`uptime`・`app_uptime`・`fps`・`cfps`・`face_pending`・`face_saved`・`face_standby`・`drop`・`hbf`・`rssi`・`ip`・`memfree` など）。電池は無いので `battery=-1`・`charging=true`。返事の `business_hours`（撮影窓）・`face_enabled`・`face_params` に従う |
+| `POST /v1/detframes` | 束ができたら | `application/zip`。**返事が JSON で `"ok": true` のときだけ送れたことにする** |
+| `POST /v1/detlog` | 60 秒ごと | `application/x-ndjson`。`{"t":…,"kind":"stat","det_frames":{…}}` の 1 行 |
 
-1. **端末のトークンの出し方**。Pi を「別の端末」としてサーバに登録する手順（`/v1/pair` の登録コード？）。
-   いまは設定の `server.token` に手で書く形
-2. **心拍（`/v1/config`）のクエリの名前**。`cam_fps` など、ops_watchdog・稼働率が読む名前に合わせる
-   （`Api.kt` の `Telemetry`）。返事の形（`face_params` の置き場）も
-3. **`/v1/detframes` に要るクエリ**。`store_id` は必須と資料にある。端末の識別がトークンだけで足りるか
-4. **申告の送り方**。`/v1/detlog` に `kind:"stat"` の 1 行を送る形でよいか（Content-Type も）
-5. **撮影ウィンドウ**。Android はサーバから配信を受けている。同じものを受け取る形に替えるか
-6. **監視の扱い**。Pi には FCM のトークンも DPC も無い。ops_watchdog の復旧段（FCM・DPC）が
+- 店はトークンからサーバが決める（`store_id` をクエリで送らない）
+- 200 でも本文が JSON でなければ送れていない（店の Wi-Fi の同意ページ）→ 送り直す
+- 401/403 はトークンの問題なので、生コマは捨てずに送り直す。それ以外の 4xx（400・413 など）は中身の拒否なので `failed/` へ退避（消さない）
+- 撮影窓 `12345 11:00-15:00;67 17:00-21:00` は 1=月 … 7=日。終わりが始まりより前なら 0 時またぎ。**読めなければ常に撮る**（録り逃がさない）
+
+## 確認が要ること（残り）
+
+1. **受け取った `f_voice_web.py` は少し前の版**で、`/v1/detframes`・`/v1/detlog` が入っていない。
+   この 2 つは Api.kt と specs.md に合わせた。いまのサーバで受け口の条件が変わっていないか
+2. **管理画面での見え方**。`app=jp.facesystem.fservice.pi` で名乗るので、割り当ての画面で
+   F-SERVICE と別のアプリとして出るはず。そのまま割り当てられるか
+3. **監視の扱い**。Pi には FCM のトークンも DPC も無い。ops_watchdog の復旧段（FCM・DPC）が
    空振りして警報が鳴らないか。試験の間はミュート（`alert_mute.json`）を使うか
 
 ## 並設テストで見ること

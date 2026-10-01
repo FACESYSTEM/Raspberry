@@ -209,7 +209,7 @@ class Sender:
     def _run(self):
         backoff = self.backoff_start
         while not self._stop.is_set():
-            if not self.api.enabled:
+            if not self.api.ready:
                 self._stop.wait(5)
                 continue
             path = self.outbox.oldest()

@@ -3,15 +3,14 @@
 [server]
 # 空にするとサーバへは送らず、送信待ち（storage.root/outbox）に溜めるだけ
 base_url = "https://service.face-system.jp"
-# 端末の Bearer トークン（Android 版と同じ形で発行したもの）
+# 端末トークン。空のままでよい（/v1/announce で名乗り、管理画面で店に割り当てると
+# 自動で受け取って /var/lib/fservice-pi/token に保存する）
 token = ""
+# 管理画面に出る端末の名前。空なら "pi-" + machine-id の先頭 12 文字
+terminal_instance_id = ""
 heartbeat_s = 30
 stat_s = 60
 send_stat = true
-
-# すべての要求に付けるクエリ。サーバの受け口に合わせる（例: store_id は /v1/detframes で必須）
-[server.query]
-store_id = ""
 
 [camera]
 kind = "opencv"          # 試験用に作り物を使うなら "fake"
@@ -27,7 +26,8 @@ stall_s = 10
 jpeg_quality = 60
 # サーバの face_params が来ないときの値。0=全部送る / 1=影（判定だけ・全部送る）/ 2=間引く
 raw_diff_filter = 2
-# 撮影する時間帯（日本時間）。空なら常に撮る
+# 撮影する時間帯はサーバが心拍で配る（営業時間＋前後の余白・祝日込み）。
+# ここはサーバと一度も繋がっていないときの仮の値（毎日同じ）。空なら常に撮る
 windows = []
 queue_max = 32
 

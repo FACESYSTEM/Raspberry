@@ -22,7 +22,18 @@ sudo ./deploy/install.sh
 ```
 
 初回は設定の見本が `/etc/fservice-pi/config.toml` に置かれて止まる。
-`server.token` と `server.query.store_id` を書く（[design.md](design.md)「確認が要ること」1〜3）。
+`server.base_url` を確かめて（トークンは空のままでよい）、`sudo systemctl enable --now fservice-pi`。
+
+## 2b. 店に割り当てる
+
+アプリが起動すると `/v1/announce` でサーバに名乗る（Android 版のコード入力なしのペアリングと同じ）。
+
+1. `journalctl -u fservice-pi | grep 名乗り` で端末の名前（`pi-xxxxxxxxxxxx`）を確かめる
+2. 管理画面で、その名前の端末を店に割り当てる
+3. 30 秒以内に `店に割り当てられた: <店名>` と出る。トークンは `/var/lib/fservice-pi/token` に保存され、
+   以後は再起動しても名乗り直さない
+
+**並設テストでは、Pixel とは別の端末として割り当てる。**
 
 ## 3. カメラを確かめる
 
@@ -45,7 +56,7 @@ sudo -u fservice /opt/fservice-pi/venv/bin/python -m fservice_pi bench --config 
 ## 5. 動かす
 
 ```bash
-sudo systemctl enable --now fservice-pi
+sudo systemctl restart fservice-pi
 journalctl -u fservice-pi -f      # 60 秒ごとに「申告」が出る
 ```
 

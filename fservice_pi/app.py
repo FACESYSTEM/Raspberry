@@ -3,7 +3,7 @@
   撮影スレッド  カメラ → 正方形 640 → 動きの判定 → 圧縮待ちへ（満杯ならディスクへ逃がす）
   圧縮スレッド  圧縮待ち（空ならディスクの残り）→ JPEG → 束ね
   送信スレッド  送信待ち（ディスク）→ POST /v1/detframes
-  心拍スレッド  GET /v1/config（face_params を受け取る）
+  心拍スレッド  名乗り（/v1/announce）→ GET /v1/config（撮影窓・face_enabled・face_params）
   見張り        束ねの締め・申告・systemd のウォッチドッグ
 """
 
@@ -12,6 +12,7 @@ from __future__ import annotations
 import datetime as dt
 import logging
 import os
+import platform
 import queue
 import socket
 import threading
@@ -19,8 +20,8 @@ import time
 
 import cv2
 
-from . import VERSION
-from .api import ServerApi
+from . import VERSION, VERSION_CODE, hours
+from .api import Sent, ServerApi
 from .camera import Frame, make_camera, now_ms
 from .config import Config
 from .motion import MotionJudge, MotionLog
@@ -43,26 +44,65 @@ def encode_jpeg(bgr, quality: int) -> bytes:
         q -= 15
 
 
-def parse_windows(windows: list[str]) -> list[tuple[int, int]]:
-    out = []
-    for w in windows:
-        a, b = w.split("-")
-        ha, ma = (int(x) for x in a.split(":"))
-        hb, mb = (int(x) for x in b.split(":"))
-        out.append((ha * 60 + ma, hb * 60 + mb))
-    return out
-
-
-def in_windows(windows: list[tuple[int, int]], minute_of_day: int) -> bool:
+def local_hours(windows: list[str]) -> hours.Hours:
+    """設定の capture.windows（毎日同じ時間帯）。サーバから撮影窓が来るまでの仮のもの。"""
     if not windows:
-        return True
-    for start, end in windows:
-        if start <= end:
-            if start <= minute_of_day < end:
-                return True
-        elif minute_of_day >= start or minute_of_day < end:  # 日またぎ
-            return True
-    return False
+        return hours.Hours(None)
+    return hours.parse("1234567 " + " ".join(windows))
+
+
+def terminal_id(configured: str) -> str:
+    if configured:
+        return configured
+    try:
+        with open("/etc/machine-id") as f:
+            return "pi-" + f.read().strip()[:12]
+    except OSError:
+        return "pi-" + platform.node()
+
+
+def _read(path: str) -> str:
+    try:
+        with open(path) as f:
+            return f.read()
+    except OSError:
+        return ""
+
+
+def system_telemetry() -> dict:
+    """OS 側の状態（Api.kt Telemetry と同じ名前で送るもの）。取れないものは送らない。"""
+    out: dict = {}
+    up = _read("/proc/uptime").split()
+    if up:
+        out["uptime"] = int(float(up[0]))
+    mem = {}
+    for line in _read("/proc/meminfo").splitlines():
+        k, _, v = line.partition(":")
+        if v.strip().endswith("kB"):
+            mem[k] = int(v.split()[0]) // 1024
+    if "MemTotal" in mem:
+        out["memtotal"] = mem["MemTotal"]
+        out["memfree"] = mem.get("MemAvailable", mem.get("MemFree", -1))
+        out["memlow"] = str(out["memfree"] < 200).lower()
+    for line in _read("/proc/self/status").splitlines():
+        if line.startswith("VmRSS:"):
+            out["appmem"] = int(line.split()[1]) // 1024
+    # Wi-Fi の電波（dBm）。/proc/net/wireless の 4 列目
+    for line in _read("/proc/net/wireless").splitlines()[2:]:
+        cols = line.split()
+        if len(cols) >= 4:
+            try:
+                out["rssi"] = int(float(cols[3].rstrip(".")))
+            except ValueError:
+                pass
+            break
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("192.0.2.1", 9))  # 送らない。経路から自分の IP を知るだけ
+            out["ip"] = s.getsockname()[0]
+    except OSError:
+        pass
+    return out
 
 
 def sd_notify(msg: str):
@@ -99,8 +139,14 @@ class App:
         self.outbox = Outbox(cfg.outbox_dir, cfg.failed_dir, cfg.storage.min_free_mb, self.c)
         self.batcher = Batcher(self.motion, self.outbox, self.c, self.mode)
         self.sender = Sender(self.api, self.outbox, self.c)
-        self.windows = parse_windows(cfg.capture.windows)
+        self.hours = local_hours(cfg.capture.windows)
+        self.face_enabled = True
         self.face_params: dict = {}
+        self.store_name = ""
+        self.tid = terminal_id(cfg.server.terminal_instance_id)
+        self._hb_fails = 0
+        self._hb_last_err = ""
+        self._load_token()
         self._q: queue.Queue[Frame] = queue.Queue(maxsize=cfg.capture.queue_max)
         self._stop = threading.Event()
         self._capture_done = threading.Event()
@@ -111,6 +157,25 @@ class App:
         self._threads: list[threading.Thread] = []
 
     # --- 設定 ---
+
+    def _load_token(self):
+        if self.api.token:
+            return
+        tok = _read(str(self.cfg.token_path)).strip()
+        if tok:
+            self.api.token = tok
+
+    def _save_token(self, token: str):
+        path = self.cfg.token_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(".tmp")
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w") as f:
+            f.write(token)
+        os.replace(tmp, path)
+
+    def should_capture(self, when: dt.datetime) -> bool:
+        return self.face_enabled and self.hours.open_at(when)
 
     def mode(self) -> int:
         v = self.face_params.get("raw_diff_filter", self.cfg.capture.raw_diff_filter)
@@ -139,7 +204,8 @@ class App:
             t.start()
             self._threads.append(t)
         sd_notify("READY=1")
-        log.info("起動 %s mode=%d windows=%s", VERSION, self.mode(), self.cfg.capture.windows or "常時")
+        log.info("起動 %s 端末 %s mode=%d トークン%s", VERSION, self.tid, self.mode(),
+                 "あり" if self.api.token else "なし（名乗って割り当てを待つ）")
 
     def request_stop(self):
         self._stop.set()
@@ -177,10 +243,9 @@ class App:
         try:
             while not self._stop.is_set():
                 self._last_capture_loop = time.monotonic()
-                now_local = dt.datetime.now()
-                if not in_windows(self.windows, now_local.hour * 60 + now_local.minute):
+                if not self.should_capture(dt.datetime.now()):
                     if opened:
-                        log.info("撮影窓の外。カメラを止める")
+                        log.info("撮影窓の外（または管理画面で撮影停止）。カメラを止める")
                         self.camera.close()
                         opened = False
                         self._capturing = False
@@ -260,30 +325,87 @@ class App:
     # --- 心拍 ---
 
     def telemetry(self) -> dict:
+        """心拍のクエリ。名前は Api.kt の config() と同じ。Pi に無いもの（電池・DPC 等）は送らない
+        か、Android が「不明」に使う値（-1）で送る。"""
         snap = self.c.snapshot()
-        out = {
-            "app_ver": VERSION,
-            "cam_fps": self.cam_fps(),
-            "uptime_s": int(time.monotonic() - self._started),
-            "free_mb": free_mb(self.outbox.root),
-            "diff_filter": self.mode(),
-            "outbox_frames": self.outbox.stats()["outbox_frames"],
-            "raw_sent": snap.get("raw_sent", 0),
-        }
+        cam = self.cam_fps()
         temp = cpu_temp_c()
-        if temp is not None:
-            out["temp_c"] = temp
-        return out
+        q = {
+            "pending": self.outbox.stats()["outbox_frames"],
+            "rejected": snap.get("raw_rejected", 0),
+            "standby": str(not self._capturing).lower(),
+            "version": VERSION,
+            "version_code": VERSION_CODE,
+            "screen": "pi",
+            # サーバはこの値があるときだけ端末状態を記録する。Pi に電池は無い＝-1（不明）・給電中
+            "battery": -1,
+            "charging": "true",
+            "temp": temp if temp is not None else -1.0,
+            "face_pending": self.outbox.stats()["outbox_frames"],
+            "face_saved": snap.get("raw_sent", 0),
+            "face_standby": str(self._capturing).lower(),
+            "app_uptime": int(time.monotonic() - self._started),
+            # 解析 fps。Pi は届いた全コマを差分判定するので、カメラ供給と同じ
+            "fps": f"{cam:.1f}",
+            "cfps": f"{cam:.1f}",
+            "hbf": self._hb_fails,
+            "hbe": self._hb_last_err[:80],
+            "drop": snap.get("raw_dropped", 0),
+            "net": "wifi",
+        }
+        q.update(system_telemetry())
+        return q
+
+    def _announce(self) -> bool:
+        res = self.api.announce(self.tid, f"Raspberry Pi {platform.machine()}",
+                                f"{platform.system()} {platform.release()}")
+        if res is None:
+            return False
+        self._save_token(res.token)
+        self.api.token = res.token
+        self.store_name = res.store_name
+        if res.business_hours:
+            self.hours = hours.parse(res.business_hours)
+        log.info("店に割り当てられた: %s（%s）", res.store_name, res.store_id)
+        return True
+
+    def _apply_config(self, data: dict):
+        bh = data.get("business_hours")
+        if isinstance(bh, str):
+            new = hours.parse(bh)
+            if bh.strip() and new.always:
+                log.warning("撮影窓を読めない（常に撮る）: %r", bh)
+            self.hours = new
+        enabled = bool(data.get("face_enabled", True))
+        if enabled != self.face_enabled:
+            log.info("撮影のスイッチ（管理画面）: %s", "入" if enabled else "切")
+        self.face_enabled = enabled
+        fp = data.get("face_params")
+        before = self.mode()
+        self.face_params = fp if isinstance(fp, dict) else {}
+        if self.mode() != before:
+            log.info("raw_diff_filter が %d → %d", before, self.mode())
+        name = data.get("store_name")
+        if name and name != self.store_name:
+            log.info("店舗: %s", name)
+            self.store_name = name
 
     def _heartbeat_loop(self):
+        announced_log = 0.0
         while not self._stop.is_set():
             if self.api.enabled:
-                res = self.api.heartbeat(self.telemetry())
-                if isinstance(res, dict) and isinstance(res.get("face_params"), dict):
-                    before = self.mode()
-                    self.face_params = res["face_params"]
-                    if self.mode() != before:
-                        log.info("raw_diff_filter が %d → %d", before, self.mode())
+                if not self.api.token:
+                    if not self._announce() and time.monotonic() - announced_log > 600:
+                        announced_log = time.monotonic()
+                        log.info("名乗りました（%s）。管理画面でこの端末を店に割り当ててください", self.tid)
+                else:
+                    result, body = self.api.heartbeat(self.telemetry())
+                    if result is Sent.OK:
+                        self._apply_config(body)
+                    else:
+                        self._hb_fails += 1
+                        self._hb_last_err = str(body)
+                        log.warning("心拍に失敗: %s", body)
             self._stop.wait(self.cfg.server.heartbeat_s)
 
     # --- 見張り ---
@@ -310,7 +432,7 @@ class App:
                 next_stat = time.monotonic() + self.cfg.server.stat_s
                 line = self.stat_line()
                 log.info("申告 %s", line["det_frames"])
-                if self.api.enabled and self.cfg.server.send_stat:
+                if self.api.ready and self.cfg.server.send_stat:
                     result, detail = self.api.post_detlog([line])
                     if result.value != "ok":
                         log.warning("申告を送れない: %s", detail)

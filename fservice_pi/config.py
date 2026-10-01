@@ -15,8 +15,12 @@ from pathlib import Path
 class ServerConfig:
     # 空ならサーバへ送らない（送信待ちに溜めるだけ。事務所での単体確認用）
     base_url: str = ""
+    # 端末トークン。空なら /v1/announce で名乗り、管理画面で店に割り当てられたら
+    # 返ってきたものを storage.root/token に保存して使う（Android 版の逆向き登録と同じ）
     token: str = ""
-    # すべての要求に付けるクエリ（store_id など）。サーバの受け口に合わせて書く
+    # 端末の名前（管理画面に出る）。空なら "pi-" + machine-id の先頭 12 文字
+    terminal_instance_id: str = ""
+    # すべての要求に付けるクエリ。通常は要らない（店はトークンからサーバが決める）
     query: dict[str, str] = field(default_factory=dict)
     timeout_s: float = 20.0
     heartbeat_s: float = 30.0
@@ -76,6 +80,10 @@ class Config:
     @property
     def failed_dir(self) -> Path:
         return Path(self.storage.root) / "failed"
+
+    @property
+    def token_path(self) -> Path:
+        return Path(self.storage.root) / "token"
 
 
 def _fill(obj, data: dict, section: str):

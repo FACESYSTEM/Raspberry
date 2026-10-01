@@ -98,6 +98,7 @@ def test_outbox_refuses_when_disk_low(tmp_path):
 
 class FakeApi:
     enabled = True
+    ready = True
 
     def __init__(self, results):
         self.results = list(results)
