@@ -484,6 +484,9 @@ class App:
         fp = data.get("face_params")
         before = self.mode()
         self.face_params = fp if isinstance(fp, dict) else {}
+        # det_frames_min_free_mb: 空きがこれを切ったらディスクへ書かない（書かれていなければ設定の値）
+        mf = self._param_int("det_frames_min_free_mb", self.cfg.storage.min_free_mb)
+        self.spill.min_free_mb = self.outbox.min_free_mb = max(0, mf)
         if self.mode() != before:
             log.info("raw_diff_filter が %d → %d", before, self.mode())
         name = data.get("store_name")
