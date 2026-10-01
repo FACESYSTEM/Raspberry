@@ -84,7 +84,7 @@ POST /v1/detframes
 | 口 | いつ | 中身 |
 |---|---|---|
 | `POST /v1/announce` | トークンが無い間、心拍の間隔で | `terminal_instance_id`・`device_model`・`os_version`・`app`（`jp.facesystem.fservice.pi`）・`version_code`。管理画面で店に割り当てると `assigned=true` とトークンが返る。トークンは `/var/lib/fservice-pi/token`（0600）に保存 |
-| `GET /v1/config` | 30 秒ごと | クエリは Api.kt と同じ名前（`version`・`temp`・`uptime`・`app_uptime`・`fps`・`cfps`・`face_pending`・`face_saved`・`face_standby`・`drop`・`hbf`・`rssi`・`ip`・`memfree` など）。電池は無いので `battery=-1`・`charging=true`。返事の `business_hours`（撮影窓）・`face_enabled`・`face_params` に従う |
+| `GET /v1/config` | 30 秒ごと | クエリは Api.kt と同じ名前（`version`・`temp`・`uptime`・`app_uptime`・`fps`・`cfps`・`face_pending`・`face_saved`・`face_standby`・`drop`・`hbf`・`rssi`・`ip`・`memfree` など）。電池は無いので `battery=-1`・`charging=true`。**`temp` も -1（不明）で送る**（Android の `temp` は電池温度で、`health_watch.py` は 45℃以上を「熱の蓄積」として再起動する。Pi の CPU は普段 50〜60℃なので入れると誤判定になる。CPU 温度は申告の `cpu_temp` に載せる）。返事の `business_hours`（撮影窓）・`face_enabled`・`face_params` に従う |
 | `POST /v1/detframes` | 束ができたら | `application/zip`。**返事が JSON で `"ok": true` のときだけ送れたことにする** |
 | `POST /v1/detlog` | 60 秒ごと | `application/x-ndjson`。`{"t":…,"kind":"stat","det_frames":{…}}` の 1 行 |
 | `POST /v1/selfshot` | 撮影中、10 分ごと | `image/jpeg` 1 枚。**監視（ops_watchdog）はこの到着時刻でカメラの生死を見る**。無人で生コマが全部間引かれても「生きている」と分かる |

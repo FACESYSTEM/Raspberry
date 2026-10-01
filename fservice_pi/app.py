@@ -394,7 +394,6 @@ class App:
         か、Android が「不明」に使う値（-1）で送る。"""
         snap = self.c.snapshot()
         cam = self.cam_fps()
-        temp = cpu_temp_c()
         q = {
             "pending": self.outbox.stats()["outbox_frames"],
             "rejected": snap.get("raw_rejected", 0),
@@ -405,7 +404,10 @@ class App:
             # サーバはこの値があるときだけ端末状態を記録する。Pi に電池は無い＝-1（不明）・給電中
             "battery": -1,
             "charging": "true",
-            "temp": temp if temp is not None else -1.0,
+            # Android の temp は電池の温度（普段 30℃台）。サーバの health_watch は 45℃以上で
+            # 「熱の蓄積」とみなす。Pi の CPU 温度（普段 50〜60℃）を入れると正常なのに高温扱いに
+            # なるので、ここは「不明」で送る。CPU 温度は申告の cpu_temp に載せる
+            "temp": -1.0,
             "face_pending": self.outbox.stats()["outbox_frames"],
             "face_saved": snap.get("raw_sent", 0),
             "face_standby": str(self._capturing).lower(),
@@ -526,6 +528,9 @@ class App:
         det["diff_filter"] = self.mode()
         det["cam_fps"] = self.cam_fps()
         det["raw_fps_set"] = self.raw_fps()
+        t = cpu_temp_c()
+        if t is not None:
+            det["cpu_temp"] = t
         w, h = self._frame_wh
         return {"t": now_ms(), "kind": "stat", "w": w, "h": h, "f": [], "det_frames": det}
 
