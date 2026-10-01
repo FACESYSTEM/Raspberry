@@ -106,7 +106,8 @@ class FakeApi:
 
     def post_detframes(self, body):
         self.bodies.append(body)
-        return self.results.pop(0) if self.results else (Sent.OK, "")
+        r = self.results.pop(0) if self.results else (Sent.OK, "")
+        return (*r, {"ok": True, "saved": 1, "skipped": 0} if r[0] is Sent.OK else {})
 
 
 def test_sender_retry_then_ok_and_reject(tmp_path):

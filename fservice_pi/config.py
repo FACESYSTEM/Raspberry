@@ -26,6 +26,8 @@ class ServerConfig:
     heartbeat_s: float = 30.0
     # 申告（kind:"stat"）を /v1/detlog へ送る間隔
     stat_s: float = 60.0
+    # 撮影中に生存確認の 1 枚（/v1/selfshot）を送る間隔
+    selfshot_s: float = 600.0
     send_stat: bool = True
 
 

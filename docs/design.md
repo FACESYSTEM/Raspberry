@@ -83,6 +83,8 @@ POST /v1/detframes
 | `GET /v1/config` | 30 秒ごと | クエリは Api.kt と同じ名前（`version`・`temp`・`uptime`・`app_uptime`・`fps`・`cfps`・`face_pending`・`face_saved`・`face_standby`・`drop`・`hbf`・`rssi`・`ip`・`memfree` など）。電池は無いので `battery=-1`・`charging=true`。返事の `business_hours`（撮影窓）・`face_enabled`・`face_params` に従う |
 | `POST /v1/detframes` | 束ができたら | `application/zip`。**返事が JSON で `"ok": true` のときだけ送れたことにする** |
 | `POST /v1/detlog` | 60 秒ごと | `application/x-ndjson`。`{"t":…,"kind":"stat","det_frames":{…}}` の 1 行 |
+| `POST /v1/selfshot` | 撮影中、10 分ごと | `image/jpeg` 1 枚。**監視（ops_watchdog）はこの到着時刻でカメラの生死を見る**。無人で生コマが全部間引かれても「生きている」と分かる |
+| `POST /v1/preview` | 心拍の返事に `preview_request` が立ったとき | `image/jpeg` 1 枚。管理画面での画角確認（設置のとき） |
 
 - 店はトークンからサーバが決める（`store_id` をクエリで送らない）
 - 200 でも本文が JSON でなければ送れていない（店の Wi-Fi の同意ページ）→ 送り直す
@@ -98,12 +100,17 @@ POST /v1/detframes
   Pi は `jp.facesystem.fservice.pi` で名乗り、管理画面の「未割当の端末」に出る。割り当て方は Android と同じ。
   **3 日名乗らない未割当の ID は自動で消える**（Pi は割り当てまで心拍の間隔で名乗り続けるので問題ない）
 
-## 確認が要ること（残り）
+## 本番サーバ（`f_voice_web.py.live`）と突き合わせた結果（2026-10-01）
 
-1. **生コマの受け口**。2 回受け取った `f_voice_web.py` はどちらも同じ少し前の版で、
-   `/v1/detframes`・`/v1/detlog` が入っていない。この 2 つは Api.kt と specs.md に合わせてある。
-   いまのサーバ（`/opt/f-voice/f_voice_web.py`）で条件が変わっていないかを、実機を繋ぐ前に確かめる
-2. **監視の扱い** → **サーバ側で対応してもらう**（2026-10-01 決定）。下の「サーバ側への申し送り」
+| 口 | 実物の条件 | Pi 版 |
+|---|---|---|
+| `/v1/detframes` | エントリ名 `(\d{10,16})r?\.jpg`・各 1〜200KB・ZIP 8MB 以下・展開後 40MB 以下。営業日はエントリ名の時刻で決める。既にある名前は上書きせず `skipped` に数えて `ok=true` | 一致。送り直しても二重にならない。返事の `skipped` は申告の `server_skipped` に足す |
+| `/v1/detlog` | 2MB 以下を、その端末・営業日のファイルに追記 | 一致（申告の 1 行） |
+| `/v1/config` | `cfps` があると端末の役割を `camera` に固定（監視の対象になる）。`business_hours` は撮影窓（`capture_hours`＝営業時間＋前後の余白）。`face_params` は店の設定に**端末ごとの設定**を重ねたもの | 一致。`raw_diff_filter` は Pi だけ別の値にもできる |
+| `/v1/selfshot` | 1 端末 1 日 1 枚に上書き。到着時刻を `selfshot_at` に記録 | 撮影中 10 分ごとに送る |
+| `/v1/preview` | 端末ごと 1 枚に上書き | 頼まれたときだけ送る |
+
+**残っている確認はない。** あとは実機（Pi＋ELP カメラ）で `bench` を測り、本番サーバに名乗らせて割り当てる。
 
 ## サーバ側への申し送り（監視で Pi を見分けるために）
 

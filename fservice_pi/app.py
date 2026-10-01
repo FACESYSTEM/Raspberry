@@ -145,6 +145,8 @@ class App:
         self.store_name = ""
         self.tid = terminal_id(cfg.server.terminal_instance_id)
         self._hb_fails = 0
+        self._latest_frame: Frame | None = None
+        self._last_selfshot = 0.0
         self._hb_last_err = ""
         self._load_token()
         self._q: queue.Queue[Frame] = queue.Queue(maxsize=cfg.capture.queue_max)
@@ -280,6 +282,7 @@ class App:
                 if len(self._fps_times) > 1000:
                     self._fps_times = self._fps_times[-600:]
                 self.c.add("raw_frames")
+                self._latest_frame = frame
                 self.motion.record(frame.t_ms, self.judge.judge(frame.gray))
                 try:
                     self._q.put_nowait(frame)
@@ -369,6 +372,42 @@ class App:
         log.info("店に割り当てられた: %s（%s）", res.store_name, res.store_id)
         return True
 
+    def _latest_jpeg(self) -> bytes | None:
+        """いま撮れている 1 枚。撮影していない・古い（10 秒超）なら None。"""
+        f = self._latest_frame
+        if f is None or not self._capturing or now_ms() - f.t_ms > 10_000:
+            return None
+        try:
+            return encode_jpeg(f.bgr, 80)
+        except Exception:
+            return None
+
+    def _send_selfshot(self):
+        """撮影中は selfshot_s ごとに 1 枚。無人で生コマが全部間引かれても、
+        サーバの監視が「カメラが生きている」と分かるようにする。"""
+        if time.monotonic() - self._last_selfshot < self.cfg.server.selfshot_s:
+            return
+        jpeg = self._latest_jpeg()
+        if jpeg is None:
+            return
+        result, detail = self.api.post_selfshot(jpeg)
+        if result is Sent.OK:
+            self._last_selfshot = time.monotonic()
+            self.c.add("selfshot_sent")
+        else:
+            log.warning("生存確認を送れない: %s", detail)
+
+    def _send_preview(self):
+        jpeg = self._latest_jpeg()
+        if jpeg is None:
+            log.info("画角の確認を頼まれたが、撮影していないので送れない")
+            return
+        result, detail = self.api.post_preview(jpeg)
+        if result is Sent.OK:
+            log.info("画角の確認に 1 枚送った")
+        else:
+            log.warning("画角の確認を送れない: %s", detail)
+
     def _apply_config(self, data: dict):
         bh = data.get("business_hours")
         if isinstance(bh, str):
@@ -402,6 +441,9 @@ class App:
                     result, body = self.api.heartbeat(self.telemetry())
                     if result is Sent.OK:
                         self._apply_config(body)
+                        if body.get("preview_request"):
+                            self._send_preview()
+                        self._send_selfshot()
                     else:
                         self._hb_fails += 1
                         self._hb_last_err = str(body)

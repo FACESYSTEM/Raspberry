@@ -223,11 +223,18 @@ class Sender:
                 log.error("送信待ちを読めない %s: %s", path.name, e)
                 self.outbox.reject(path, f"read error: {e}")
                 continue
-            result, detail = self.api.post_detframes(body)
+            result, detail, reply = self.api.post_detframes(body)
             frames = int(path.stem.split("-")[1])
             if result is Sent.OK:
                 path.unlink(missing_ok=True)
                 self.c.add("raw_sent", frames)
+                # サーバが保存しなかった分（送り直しで既にある＝exists も含む）。数だけ残す
+                try:
+                    skipped = int(reply.get("skipped") or 0)
+                except (TypeError, ValueError):
+                    skipped = 0
+                if skipped:
+                    self.c.add("server_skipped", skipped)
                 self.last_ok_ms = time.time_ns() // 1_000_000
                 backoff = self.backoff_start
             elif result is Sent.REJECT:
