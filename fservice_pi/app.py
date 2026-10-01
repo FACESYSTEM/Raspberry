@@ -396,8 +396,12 @@ class App:
         か、Android が「不明」に使う値（-1）で送る。"""
         snap = self.c.snapshot()
         cam = self.cam_fps()
+        ob = self.outbox.stats()
         q = {
-            "pending": self.outbox.stats()["outbox_frames"],
+            # 管理画面は pending >= 500 で「未送信が詰まっている」と出す（Android では写真の枚数）。
+            # Pi の生コマは毎秒 30 枚なので枚数で送ると数十秒の遅れで誤警報になる。
+            # 送信待ちの束（1 束 = 最大 60 枚・10 秒）の数で送る。500 束 ≒ 1 時間半ぶんの詰まり
+            "pending": ob["outbox_files"],
             "rejected": snap.get("raw_rejected", 0),
             "standby": str(not self._capturing).lower(),
             "version": VERSION,
@@ -410,7 +414,7 @@ class App:
             # 「熱の蓄積」とみなす。Pi の CPU 温度（普段 50〜60℃）を入れると正常なのに高温扱いに
             # なるので、ここは「不明」で送る。CPU 温度は申告の cpu_temp に載せる
             "temp": -1.0,
-            "face_pending": self.outbox.stats()["outbox_frames"],
+            "face_pending": 0,   # Pi は顔写真（/v1/faces）を送らない
             "face_saved": snap.get("raw_sent", 0),
             "face_standby": str(self._capturing).lower(),
             "app_uptime": int(time.monotonic() - self._started),
