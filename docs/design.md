@@ -19,7 +19,7 @@
 ```
 USB カメラ（MJPEG 1280×720 30fps）
    ↓ 撮影スレッド
-中央を正方形に切り出し → 640×640（Android 版に合わせる）
+長い辺を 640 に縮める（切り抜かない。1280×720 → 640×360。Android 版の frameSmallNv21 と同じ）
    ↓ 動きの判定（16×16 セル・T=8。R-164 と同じ値）→ 動きの時刻を記録
    ↓ 圧縮待ち（32 枚）── 満杯 ──→ ディスクへ逃がす（spill/）
    ↓ 圧縮スレッド（空いたらディスクの残りを拾う）
@@ -37,7 +37,11 @@ POST /v1/detframes
 
 | Android（FaceCaptureService.kt） | Pi 版 | 備考 |
 |---|---|---|
-| `frameSmallNv21()` 640×640 | `camera.square()` 640×640 | |
+| `frameSmallNv21()` 正立・長辺 640・縦横比そのまま | `camera.fit()` 長辺 640・縦横比そのまま | 切り抜かない。JPEG 画質 60（`DET_FRAMES_Q`）も同じ |
+| `det_frames_raw_fps`（0=切・1〜29=間引く・30 以上=全部） | 同じ | 書かれていなければ Pi は全部（Android は 0＝切）。端末別の face_params で Pi だけ変えられる |
+| `det_frames_max_min`（撮影窓が開いてからの安全弁） | 同じ。止めたら `det_frames auto-off` を記録 | 書かれていなければ Pi は止めない（Android は 15 分） |
+| `det_frames_defer`（閉店後にまとめて送る） | 同じ | |
+| 記録（`kind:"note"`: `det_frames closed-hours`・`raw_diff drop …`） | 同じ形で `/v1/detlog` へ | |
 | 差分判定（Y 面の 256 セル平均） | `motion.MotionJudge`（グレーの 256 セル平均） | 値は同じ（T=8・保護帯 5 秒） |
 | `raw_diff_filter` 0/1/2 | 同じ | 既定はサーバの `face_params` に従う。来なければ設定の値 |
 | `FrameSpill`（R-14） | `spill.Spill` | .processing への改名・起動時の戻し・数え方も同じ |
@@ -147,7 +151,7 @@ OS ごと固まったら基板が 15 秒で再起動する。**つまりサー�
 ## 決めたこと
 
 - カメラの読み込みは OpenCV（V4L2）。Linux のカメラの標準の口と libjpeg-turbo を呼んでいるだけで、他に替えても速さは変わらない
-- 解像度は Android 版と同じ 640×640。サーバとの比較が効くように、最初は合わせる
+- 絵の作り方は Android 版と同じ（長辺 640・切り抜かない・画質 60）。サーバとの比較が効くように合わせる
 - fps は 30 を目標にする。出なければ出た分で動く（止まらない）。実際の値は `bench` と心拍の `cam_fps` で見る
 - 設定は事務所で書いて出荷する（現地では触らない）
 

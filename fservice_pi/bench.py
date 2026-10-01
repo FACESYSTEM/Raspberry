@@ -1,7 +1,7 @@
 """実機で「毎秒何枚撮って流せるか」を測る。
 
   1) カメラ単体: cap.read() だけを回して、届くコマ数/秒
-  2) 1 枚あたりの処理: 正方形化＋グレー化／動きの判定／JPEG 化 の時間と大きさ
+  2) 1 枚あたりの処理: 縮小＋グレー化／動きの判定／JPEG 化 の時間と大きさ
   3) 通し: 撮影スレッドと圧縮スレッドを本番と同じ形で回し、圧縮まで流せた枚数/秒と取りこぼし
 
 送信はしない（回線の速さは別の話なので混ぜない）。
@@ -17,7 +17,7 @@ import time
 import cv2
 
 from .app import encode_jpeg
-from .camera import make_camera, square
+from .camera import fit, make_camera
 from .config import Config
 from .motion import MotionJudge
 
@@ -33,7 +33,7 @@ def bench(cfg: Config, seconds: float = 20.0):
     cam = make_camera(cfg.camera)
     cam.open()
     print(f"camera: {cfg.camera.kind} {cfg.camera.device} 要求 {cfg.camera.width}x{cfg.camera.height} "
-          f"{cfg.camera.fps}fps {cfg.camera.fourcc} → 出力 {cfg.camera.out_size}x{cfg.camera.out_size}")
+          f"{cfg.camera.fps}fps {cfg.camera.fourcc} → 長辺 {cfg.camera.long_px} に縮める")
     if hasattr(cam, "cap") and cam.cap is not None:
         c = cam.cap
         print(f"  実際: {int(c.get(cv2.CAP_PROP_FRAME_WIDTH))}x{int(c.get(cv2.CAP_PROP_FRAME_HEIGHT))} "
@@ -56,7 +56,7 @@ def bench(cfg: Config, seconds: float = 20.0):
         if f is None:
             continue
         t = time.perf_counter()
-        bgr = square(f.bgr, cfg.camera.out_size)
+        bgr = fit(f.bgr, cfg.camera.long_px)
         gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
         t_sq.append((time.perf_counter() - t) * 1000)
         t = time.perf_counter()
@@ -66,8 +66,10 @@ def bench(cfg: Config, seconds: float = 20.0):
         jpg = encode_jpeg(bgr, cfg.capture.jpeg_quality)
         t_jp.append((time.perf_counter() - t) * 1000)
         sizes.append(len(jpg) / 1024)
+        shape = bgr.shape
     if t_jp:
-        print(f"[2] 1 枚あたり（ms・中央値/95%）: 正方形+グレー {statistics.median(t_sq):.2f}/{_pct(t_sq, .95):.2f}"
+        print(f"    送る絵の大きさ: {shape[1]}x{shape[0]}")
+        print(f"[2] 1 枚あたり（ms・中央値/95%）: 縮小+グレー {statistics.median(t_sq):.2f}/{_pct(t_sq, .95):.2f}"
               f"  動き判定 {statistics.median(t_mo):.2f}/{_pct(t_mo, .95):.2f}"
               f"  JPEG(q={cfg.capture.jpeg_quality}) {statistics.median(t_jp):.2f}/{_pct(t_jp, .95):.2f}"
               f"  大きさ {statistics.median(sizes):.0f}KB")

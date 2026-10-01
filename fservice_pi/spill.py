@@ -33,9 +33,8 @@ def free_mb(path: Path) -> int:
 
 
 class Spill:
-    def __init__(self, root: Path, out_size: int, min_free_mb: int, writer_queue: int = 64):
+    def __init__(self, root: Path, min_free_mb: int, writer_queue: int = 64):
         self.root = root
-        self.out_size = out_size
         self.min_free_mb = min_free_mb
         self._q: queue.Queue[Frame | None] = queue.Queue(maxsize=writer_queue)
         self._lock = threading.Lock()
@@ -83,7 +82,8 @@ class Spill:
             frame = self._q.get()
             if frame is None:
                 return
-            name = f"{frame.t_ms}{SUFFIX}"
+            h, w = frame.bgr.shape[:2]
+            name = f"{frame.t_ms}_{w}x{h}{SUFFIX}"
             tmp = self.root / (name + ".tmp")
             try:
                 frame.bgr.tofile(tmp)
@@ -105,7 +105,7 @@ class Spill:
                 if not self._names:
                     self._names = sorted(
                         (p.name for p in self.root.glob("*" + SUFFIX)),
-                        key=lambda s: int(s.split(".")[0]),
+                        key=lambda s: int(s.split("_")[0].split(".")[0]),
                     )[:512]
                 if not self._names:
                     return None
@@ -121,9 +121,10 @@ class Spill:
                     self.spill_err += 1
                 continue
             try:
-                n = self.out_size
-                bgr = np.fromfile(dst, dtype=np.uint8).reshape(n, n, 3)
-                return int(name.split(".")[0]), bgr, dst
+                t_str, size = name[: -len(SUFFIX)].split("_")
+                w, h = (int(x) for x in size.split("x"))
+                bgr = np.fromfile(dst, dtype=np.uint8).reshape(h, w, 3)
+                return int(t_str), bgr, dst
             except (OSError, ValueError):
                 with self._lock:
                     self.spill_err += 1

@@ -1,6 +1,6 @@
 """本体。スレッドの組み立て。
 
-  撮影スレッド  カメラ → 正方形 640 → 動きの判定 → 圧縮待ちへ（満杯ならディスクへ逃がす）
+  撮影スレッド  カメラ → 長辺 640 に縮める → 動きの判定 → 圧縮待ちへ（満杯ならディスクへ逃がす）
   圧縮スレッド  圧縮待ち（空ならディスクの残り）→ JPEG → 束ね
   送信スレッド  送信待ち（ディスク）→ POST /v1/detframes
   心拍スレッド  名乗り（/v1/announce）→ GET /v1/config（撮影窓・face_enabled・face_params）
@@ -135,10 +135,11 @@ class App:
         self.camera = make_camera(cfg.camera)
         self.judge = MotionJudge()
         self.motion = MotionLog()
-        self.spill = Spill(cfg.spill_dir, cfg.camera.out_size, cfg.storage.min_free_mb)
+        self.spill = Spill(cfg.spill_dir, cfg.storage.min_free_mb)
         self.outbox = Outbox(cfg.outbox_dir, cfg.failed_dir, cfg.storage.min_free_mb, self.c)
         self.batcher = Batcher(self.motion, self.outbox, self.c, self.mode)
-        self.sender = Sender(self.api, self.outbox, self.c)
+        self.sender = Sender(self.api, self.outbox, self.c,
+                             may_send=lambda: not (self.defer() and self._capturing))
         self.hours = local_hours(cfg.capture.windows)
         self.face_enabled = True
         self.face_params: dict = {}
@@ -146,6 +147,12 @@ class App:
         self.tid = terminal_id(cfg.server.terminal_instance_id)
         self._hb_fails = 0
         self._latest_frame: Frame | None = None
+        self._raw_last_ms = 0
+        self._window_open_at: float | None = None  # 撮影窓が開いた時刻（det_frames_max_min の起点）
+        self._auto_off = False
+        self._closed_noted = False
+        self._notes: list[dict] = []
+        self._frame_wh = (0, 0)
         self._last_selfshot = 0.0
         self._hb_last_err = ""
         self._load_token()
@@ -186,6 +193,35 @@ class App:
         except (TypeError, ValueError):
             return 0  # 読めない値は「全部送る」側に倒す
         return v if v in (0, 1, 2) else 0
+
+    def _param_int(self, key: str, default: int | None) -> int | None:
+        v = self.face_params.get(key)
+        if v is None:
+            return default
+        try:
+            return int(v)
+        except (TypeError, ValueError):
+            return default
+
+    def raw_fps(self) -> int:
+        """face_params det_frames_raw_fps（0〜60）。書かれていなければ設定の capture.raw_fps。"""
+        return max(0, min(60, self._param_int("det_frames_raw_fps", self.cfg.capture.raw_fps)))
+
+    def max_ms(self) -> int | None:
+        """face_params det_frames_max_min。撮影窓が開いてからこの分数で生コマを止める（安全弁）。
+        Android は書かれていなければ 15 分。Pi は書かれているときだけ効かせる。"""
+        v = self._param_int("det_frames_max_min", None)
+        return None if v is None else max(1, min(24 * 60, v)) * 60_000
+
+    def defer(self) -> bool:
+        """face_params det_frames_defer=1 なら、撮影窓の外（閉店後）にまとめて送る。"""
+        return self._param_int("det_frames_defer", 0) == 1
+
+    def note(self, text: str):
+        """検出ログに 1 行だけ残す（Android の detFramesNote と同じ形）。"""
+        w, h = self._frame_wh
+        self._notes.append({"t": now_ms(), "kind": "note", "w": w, "h": h, "f": [], "note": text})
+        log.info("記録: %s", text)
 
     def cam_fps(self) -> float:
         """直近 10 秒の取得コマ数から。撮影窓の外は -1（Android 版と同じ）。"""
@@ -252,8 +288,17 @@ class App:
                         opened = False
                         self._capturing = False
                         self.batcher.flush(force=True)
+                    if not self._closed_noted:
+                        self._closed_noted = True
+                        self.note("det_frames closed-hours")
+                    self._window_open_at = None
                     self._stop.wait(5)
                     continue
+                if self._window_open_at is None:
+                    # 撮影窓が開いた。安全弁の起点をここに置く（Android の checkSchedule と同じ）
+                    self._window_open_at = time.monotonic()
+                    self._auto_off = False
+                    self._closed_noted = False
                 if not opened:
                     try:
                         self.camera.open()
@@ -283,6 +328,23 @@ class App:
                     self._fps_times = self._fps_times[-600:]
                 self.c.add("raw_frames")
                 self._latest_frame = frame
+                self._frame_wh = (frame.bgr.shape[1], frame.bgr.shape[0])
+                # 生コマを送るか（face_params に従う）。送らないコマも cam_fps と生存確認には数える
+                fps = self.raw_fps()
+                if fps <= 0:
+                    continue
+                mx = self.max_ms()
+                if mx is not None and (time.monotonic() - self._window_open_at) * 1000 > mx:
+                    if not self._auto_off:
+                        self._auto_off = True
+                        self.note("det_frames auto-off")
+                        self.batcher.flush(force=True)
+                    continue
+                if fps < 30:
+                    if frame.t_ms - self._raw_last_ms < 1000 // fps:
+                        continue
+                self._raw_last_ms = frame.t_ms
+                self.c.add("raw_taken")
                 self.motion.record(frame.t_ms, self.judge.judge(frame.gray))
                 try:
                     self._q.put_nowait(frame)
@@ -460,7 +522,9 @@ class App:
         det["pending"] = self.batcher.pending_count()
         det["diff_filter"] = self.mode()
         det["cam_fps"] = self.cam_fps()
-        return {"t": now_ms(), "kind": "stat", "det_frames": det}
+        det["raw_fps_set"] = self.raw_fps()
+        w, h = self._frame_wh
+        return {"t": now_ms(), "kind": "stat", "w": w, "h": h, "f": [], "det_frames": det}
 
     def _ticker_loop(self):
         next_stat = time.monotonic() + self.cfg.server.stat_s
@@ -474,7 +538,13 @@ class App:
                 next_stat = time.monotonic() + self.cfg.server.stat_s
                 line = self.stat_line()
                 log.info("申告 %s", line["det_frames"])
+                lines = self._notes + self.batcher.take_notes(self._frame_wh) + [line]
                 if self.api.ready and self.cfg.server.send_stat:
-                    result, detail = self.api.post_detlog([line])
-                    if result.value != "ok":
-                        log.warning("申告を送れない: %s", detail)
+                    result, detail = self.api.post_detlog(lines)
+                    if result.value == "ok":
+                        self._notes = []
+                    else:
+                        log.warning("申告を送れない（記録は次に回す）: %s", detail)
+                        self._notes = [x for x in lines if x.get("kind") == "note"][-200:]
+                else:
+                    self._notes = []

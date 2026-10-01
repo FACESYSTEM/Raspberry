@@ -19,13 +19,15 @@ fourcc = "MJPG"          # USB2 で 30fps を出すには MJPG
 width = 1280
 height = 720
 fps = 30
-out_size = 640           # 中央を正方形に切り出して 640×640（Android 版に合わせる）
+long_px = 640            # 長い辺を 640 に縮める（切り抜かない・1280x720 → 640x360。Android 版と同じ）
 stall_s = 10
 
 [capture]
 jpeg_quality = 60
 # サーバの face_params が来ないときの値。0=全部送る / 1=影（判定だけ・全部送る）/ 2=間引く
 raw_diff_filter = 2
+# 生コマの fps（サーバの face_params det_frames_raw_fps が無いとき）。30 以上＝来たコマ全部
+raw_fps = 30
 # 撮影する時間帯はサーバが心拍で配る（営業時間＋前後の余白・祝日込み）。
 # ここはサーバと一度も繋がっていないときの仮の値（毎日同じ）。空なら常に撮る
 windows = []

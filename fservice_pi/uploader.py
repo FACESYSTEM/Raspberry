@@ -127,6 +127,29 @@ class Batcher:
         self._batch: list[Item] = []
         self._batch_bytes = 0
         self._batch_started: float | None = None
+        # 間引いた（影なら間引くはずだった）コマの連続範囲 [from, to, 枚数]
+        self._drops: list[list[int]] = []
+        self._drop_shadow = False
+
+    def _note_drop(self, t: int, shadow: bool):
+        self._drop_shadow = shadow
+        if self._drops and t >= self._drops[-1][1] and t - self._drops[-1][1] <= 2_000:
+            self._drops[-1][1] = t
+            self._drops[-1][2] += 1
+        else:
+            self._drops.append([t, t, 1])
+
+    def take_notes(self, wh: tuple[int, int]) -> list[dict]:
+        """Android s138 と同じ形の記録: `raw_diff drop <枚数> <from>-<to>:<n> …`（影は shadow）。"""
+        with self._lock:
+            drops, self._drops = self._drops, []
+        if not drops:
+            return []
+        total = sum(d[2] for d in drops)
+        word = "shadow" if self._drop_shadow else "drop"
+        ranges = " ".join(f"{a}-{b}:{n}" for a, b, n in drops)
+        return [{"t": int(time.time() * 1000), "kind": "note", "w": wh[0], "h": wh[1], "f": [],
+                 "note": f"raw_diff {word} {total} {ranges}"}]
 
     def add(self, t_ms: int, jpeg: bytes):
         with self._lock:
@@ -148,9 +171,11 @@ class Batcher:
                     self._to_batch(it)
                 elif mode == 1:  # 影: 落とすはずだったものを数えて、送る
                     self.c.add("diff_would_drop")
+                    self._note_drop(it.t_ms, shadow=True)
                     self._to_batch(it)
                 else:
                     self.c.add("diff_dropped")
+                    self._note_drop(it.t_ms, shadow=False)
             self._pending = still
             due = self._batch_started is not None and (
                 self.clock() - self._batch_started >= BATCH_SECONDS)
@@ -186,8 +211,10 @@ class Batcher:
 class Sender:
     """outbox を古い順に送る。送れたら消す。拒否されたら failed/ へ（消さない）。"""
 
-    def __init__(self, api: ServerApi, outbox: Outbox, counters: Counters):
+    def __init__(self, api: ServerApi, outbox: Outbox, counters: Counters,
+                 may_send: Callable[[], bool] = lambda: True):
         self.api = api
+        self.may_send = may_send
         self.outbox = outbox
         self.c = counters
         self._stop = threading.Event()
@@ -209,7 +236,7 @@ class Sender:
     def _run(self):
         backoff = self.backoff_start
         while not self._stop.is_set():
-            if not self.api.ready:
+            if not self.api.ready or not self.may_send():
                 self._stop.wait(5)
                 continue
             path = self.outbox.oldest()

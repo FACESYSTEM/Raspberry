@@ -1,7 +1,8 @@
 """カメラ。USB UVC カメラ（OpenCV の V4L2 経由）と、試験用の作り物。
 
-出すのは「中央を正方形に切り出し、out_size に縮めた BGR 画像」と、そのグレー版。
-Android 版の 640×640 に合わせる。
+出すのは「画面全体を残したまま、長い辺を long_px に縮めた BGR 画像」と、そのグレー版。
+Android 版の frameSmallNv21（正立・長辺 640 以内・縦横比はそのまま・切り抜かない）に合わせる。
+1280×720 なら 640×360。
 """
 
 from __future__ import annotations
@@ -29,16 +30,16 @@ def now_ms() -> int:
     return time.time_ns() // 1_000_000
 
 
-def square(bgr: np.ndarray, out_size: int) -> np.ndarray:
-    """中央を正方形に切り出して out_size×out_size にする。"""
+def fit(bgr: np.ndarray, long_px: int) -> np.ndarray:
+    """長い辺を long_px 以内に縮める（縦横比はそのまま・切り抜かない）。縦横は偶数にそろえる。"""
     h, w = bgr.shape[:2]
-    side = min(h, w)
-    y0 = (h - side) // 2
-    x0 = (w - side) // 2
-    crop = bgr[y0:y0 + side, x0:x0 + side]
-    if side == out_size:
-        return np.ascontiguousarray(crop)
-    return cv2.resize(crop, (out_size, out_size), interpolation=cv2.INTER_AREA)
+    k = min(1.0, long_px / max(h, w))
+    nw, nh = int(w * k), int(h * k)
+    nw -= nw % 2
+    nh -= nh % 2
+    if (nw, nh) == (w, h):
+        return bgr
+    return cv2.resize(bgr, (nw, nh), interpolation=cv2.INTER_AREA)
 
 
 class OpenCvCamera:
@@ -72,7 +73,7 @@ class OpenCvCamera:
         if not ok or img is None:
             return None
         t = now_ms()
-        bgr = square(img, self.cfg.out_size)
+        bgr = fit(img, self.cfg.long_px)
         gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
         return Frame(t, bgr, gray)
 
@@ -100,12 +101,12 @@ class FakeCamera:
         if delay > 0:
             time.sleep(delay)
         self._next = max(self._next + 1.0 / self.cfg.fps, time.monotonic() - 1.0)
-        n = self.cfg.out_size
-        bgr = np.full((n, n, 3), 90, np.uint8)
+        n = self.cfg.long_px
+        bgr = np.full((n * 9 // 16, n, 3), 90, np.uint8)
         el = time.monotonic() - self._t0
         if el % self.moving_every_s < self.moving_for_s:
             x = int((el * 200) % (n - 100))
-            bgr[200:300, x:x + 100] = 230
+            bgr[n // 4:n // 4 + 60, x:x + 100] = 230
         gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
         return Frame(now_ms(), bgr, gray)
 

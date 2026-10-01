@@ -11,7 +11,7 @@ from fservice_pi.uploader import ENTRY_MAX
 
 
 def test_spill_roundtrip_and_recovery(tmp_path):
-    s = Spill(tmp_path, out_size=64, min_free_mb=0)
+    s = Spill(tmp_path, min_free_mb=0)
     s.start()
     for t in (300, 100, 200):
         bgr = np.full((64, 64, 3), t % 256, np.uint8)
@@ -19,12 +19,12 @@ def test_spill_roundtrip_and_recovery(tmp_path):
     s.stop()
     assert s.stats()["spill_now"] == 3
 
-    s = Spill(tmp_path, out_size=64, min_free_mb=0)
+    s = Spill(tmp_path, min_free_mb=0)
     s.start()
     t, bgr, path = s.take()
     assert t == 100 and bgr[0, 0, 0] == 100
     # 処理中に落ちた想定 → 次の起動で戻る
-    s2 = Spill(tmp_path, out_size=64, min_free_mb=0)
+    s2 = Spill(tmp_path, min_free_mb=0)
     s2.start()
     assert s2.stats()["spill_now"] == 3
     t, bgr, path = s2.take()
@@ -35,7 +35,7 @@ def test_spill_roundtrip_and_recovery(tmp_path):
 
 
 def test_spill_refuses_when_disk_low(tmp_path):
-    s = Spill(tmp_path, out_size=8, min_free_mb=10**9)
+    s = Spill(tmp_path, min_free_mb=10**9)
     s.start()
     bgr = np.zeros((8, 8, 3), np.uint8)
     assert s.offer(Frame(1, bgr, bgr[:, :, 0])) is False
@@ -69,7 +69,7 @@ def test_app_end_to_end_with_fake_camera(tmp_path):
     cfg = Config()
     cfg.camera.kind = "fake"
     cfg.camera.fps = 30
-    cfg.camera.out_size = 160
+    cfg.camera.long_px = 160
     cfg.capture.raw_diff_filter = 0  # 全部送る（保護帯の待ちを入れずに中身を確かめる）
     cfg.storage.root = str(tmp_path)
     cfg.storage.min_free_mb = 0

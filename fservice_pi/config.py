@@ -39,8 +39,8 @@ class CameraConfig:
     width: int = 1280
     height: int = 720
     fps: int = 30
-    # 中央を正方形に切り出し、この大きさに縮める（Android 版の 640×640 に合わせる）
-    out_size: int = 640
+    # 長い辺をこの大きさに縮める（縦横比はそのまま・切り抜かない。Android 版と同じ）
+    long_px: int = 640
     # これだけの秒数コマが来なければカメラを開き直す
     stall_s: float = 10.0
 
@@ -48,9 +48,12 @@ class CameraConfig:
 @dataclass
 class CaptureConfig:
     jpeg_quality: int = 60
-    # face_params の raw_diff_filter がサーバから来ないときの値
-    # 0=切（全部送る）/ 1=影（判定して記録するだけ・全部送る）/ 2=間引く
+    # face_params に書かれていないときの値（サーバに書かれていればそちらに従う）
+    # raw_diff_filter: 0=切（全部送る）/ 1=影（判定して記録するだけ・全部送る）/ 2=間引く
     raw_diff_filter: int = 2
+    # det_frames_raw_fps: 0=生コマを送らない / 1〜29=その fps に間引く / 30 以上=来たコマ全部
+    # Android は書かれていなければ 0（切）。Pi は生コマを送るための端末なので既定は全部
+    raw_fps: int = 30
     # 撮影する時間帯。空なら常に撮る。例: ["10:55-21:15", "17:00-02:00"]
     windows: list[str] = field(default_factory=list)
     # 圧縮待ちの上限（枚）。超えた分はディスクへ逃がす
