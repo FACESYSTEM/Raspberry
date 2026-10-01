@@ -1,0 +1,23 @@
+[Unit]
+Description=F-SERVICE capture terminal (Raspberry Pi)
+Wants=network-online.target time-sync.target
+After=network-online.target time-sync.target
+
+[Service]
+Type=notify
+User=fservice
+Group=video
+WorkingDirectory=/opt/fservice-pi
+ExecStart=/opt/fservice-pi/venv/bin/python -m fservice_pi run --config /etc/fservice-pi/config.toml
+# 落ちたら 5 秒で起こす。何度落ちても諦めない
+Restart=always
+RestartSec=5
+StartLimitIntervalSec=0
+# 撮影スレッドが 60 秒固まったら systemd が落として起こし直す
+WatchdogSec=60
+TimeoutStopSec=40
+StateDirectory=fservice-pi
+Nice=-5
+
+[Install]
+WantedBy=multi-user.target

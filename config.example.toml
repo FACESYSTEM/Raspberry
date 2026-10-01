@@ -1,0 +1,36 @@
+# F-SERVICE Pi 版の設定。事務所で書いて /etc/fservice-pi/config.toml に置く（現地では触らない）。
+
+[server]
+# 空にするとサーバへは送らず、送信待ち（storage.root/outbox）に溜めるだけ
+base_url = "https://service.face-system.jp"
+# 端末の Bearer トークン（Android 版と同じ形で発行したもの）
+token = ""
+heartbeat_s = 30
+stat_s = 60
+send_stat = true
+
+# すべての要求に付けるクエリ。サーバの受け口に合わせる（例: store_id は /v1/detframes で必須）
+[server.query]
+store_id = ""
+
+[camera]
+kind = "opencv"          # 試験用に作り物を使うなら "fake"
+device = "/dev/video0"
+fourcc = "MJPG"          # USB2 で 30fps を出すには MJPG
+width = 1280
+height = 720
+fps = 30
+out_size = 640           # 中央を正方形に切り出して 640×640（Android 版に合わせる）
+stall_s = 10
+
+[capture]
+jpeg_quality = 60
+# サーバの face_params が来ないときの値。0=全部送る / 1=影（判定だけ・全部送る）/ 2=間引く
+raw_diff_filter = 2
+# 撮影する時間帯（日本時間）。空なら常に撮る
+windows = []
+queue_max = 32
+
+[storage]
+root = "/var/lib/fservice-pi"
+min_free_mb = 4096
