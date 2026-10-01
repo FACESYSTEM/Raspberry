@@ -83,3 +83,25 @@ def test_max_min_auto_off(tmp_path):
     app.request_stop(); app.shutdown()
     assert app.c.snapshot()["raw_taken"] == taken   # 止まっている
     assert any(n["note"] == "det_frames auto-off" for n in app._notes)
+
+
+def test_reannounce_after_401(tmp_path):
+    from fservice_pi.api import Assigned, Sent
+    app = _app(tmp_path, {})
+    app.cfg.server.base_url = "http://x"
+    app.api.token = "old"
+    calls = []
+
+    def hb(_q):
+        calls.append(app.api.token)
+        return (Sent.OK, {}) if app.api.token == "new" else (Sent.REJECT, "HTTP 401 unauthorized")
+    app.api.heartbeat = hb
+    app.api.announce = lambda *a: Assigned("new", "s1", "店", "")
+    app.cfg.server.heartbeat_s = 0.01
+    t = __import__("threading").Thread(target=app._heartbeat_loop, daemon=True)
+    t.start()
+    time.sleep(0.3)
+    app._stop.set()
+    t.join(2)
+    assert calls[:3] == ["old", "old", "old"] and "new" in calls
+    assert (tmp_path / "token").read_text() == "new"

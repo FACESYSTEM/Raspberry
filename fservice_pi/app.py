@@ -146,6 +146,8 @@ class App:
         self.store_name = ""
         self.tid = terminal_id(cfg.server.terminal_instance_id)
         self._hb_fails = 0
+        self._unauthorized = 0
+        self._last_reannounce = -1e9
         self._latest_frame: Frame | None = None
         self._raw_last_ms = 0
         self._window_open_at: float | None = None  # 撮影窓が開いた時刻（det_frames_max_min の起点）
@@ -472,6 +474,24 @@ class App:
         else:
             log.warning("画角の確認を送れない: %s", detail)
 
+    def _reannounce(self):
+        """トークンが効かない（401 が続く）。管理画面で割り当てをやり直すと古いトークンは
+        失効し、新しいものは名乗りの返事でしか受け取れない。名乗り直して、違うトークンが
+        返れば乗り換える。同じなら何もしない（割り当てが解除されたままなら人が直す）。"""
+        if time.monotonic() - self._last_reannounce < 300:
+            return
+        self._last_reannounce = time.monotonic()
+        old = self.api.token
+        res = self.api.announce(self.tid, f"Raspberry Pi {platform.machine()}",
+                                f"{platform.system()} {platform.release()}")
+        if res is not None and res.token != old:
+            self._save_token(res.token)
+            self.api.token = res.token
+            self._unauthorized = 0
+            log.info("トークンを取り直した（割り当て: %s）", res.store_name)
+        else:
+            log.error("トークンが効かない（401）。管理画面でこの端末（%s）の割り当てを確かめてください", self.tid)
+
     def _apply_config(self, data: dict):
         bh = data.get("business_hours")
         if isinstance(bh, str):
@@ -506,6 +526,12 @@ class App:
                         log.info("名乗りました（%s）。管理画面でこの端末を店に割り当ててください", self.tid)
                 else:
                     result, body = self.api.heartbeat(self.telemetry())
+                    if result is Sent.REJECT and str(body).startswith("HTTP 401"):
+                        self._unauthorized += 1
+                        if self._unauthorized >= 3:
+                            self._reannounce()
+                    else:
+                        self._unauthorized = 0
                     if result is Sent.OK:
                         self._apply_config(body)
                         if body.get("preview_request"):
