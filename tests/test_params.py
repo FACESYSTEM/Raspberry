@@ -117,3 +117,13 @@ def test_fast_camera_capped_to_camera_fps(tmp_path):
     snap = app.c.snapshot()
     assert snap["raw_frames"] >= 250                  # 120fps で来ている
     assert 80 <= snap["raw_taken"] <= 105             # 送るのは 30fps ぶん
+
+
+def test_no_capture_before_assignment(tmp_path):
+    import datetime as dt
+    app = _app(tmp_path, {})
+    app.cfg.server.base_url = "http://x"
+    app.api.token = ""
+    assert app.unassigned() and not app.should_capture(dt.datetime.now())
+    app.api.token = "t"
+    assert not app.unassigned() and app.should_capture(dt.datetime.now())

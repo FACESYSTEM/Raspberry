@@ -2,6 +2,8 @@
 Description=F-SERVICE capture terminal (Raspberry Pi)
 Wants=network-online.target time-sync.target
 After=network-online.target time-sync.target
+# 何度落ちても起こし直すのを諦めない（Restart=always と組み）
+StartLimitIntervalSec=0
 
 [Service]
 Type=notify
@@ -13,7 +15,6 @@ ExecStart=/opt/fservice-pi/venv/bin/python -m fservice_pi run --config /etc/fser
 # 落ちたら 5 秒で起こす。何度落ちても諦めない
 Restart=always
 RestartSec=5
-StartLimitIntervalSec=0
 # 撮影スレッドが 60 秒固まったら systemd が落として起こし直す
 WatchdogSec=60
 TimeoutStopSec=40

@@ -185,7 +185,14 @@ class App:
             f.write(token)
         os.replace(tmp, path)
 
+    def unassigned(self) -> bool:
+        """サーバ宛てなのに、まだ店に割り当てられていない（トークンが無い）。"""
+        return self.api.enabled and not self.api.ready
+
     def should_capture(self, when: dt.datetime) -> bool:
+        # 割り当て前は撮らない（事務所で撮ったコマが、割り当て後に店のコマとして送られないように）
+        if self.unassigned():
+            return False
         return self.face_enabled and self.hours.open_at(when)
 
     def mode(self) -> int:
@@ -285,12 +292,12 @@ class App:
                 self._last_capture_loop = time.monotonic()
                 if not self.should_capture(dt.datetime.now()):
                     if opened:
-                        log.info("撮影窓の外（または管理画面で撮影停止）。カメラを止める")
+                        log.info("撮影窓の外（または管理画面で撮影停止・割り当て前）。カメラを止める")
                         self.camera.close()
                         opened = False
                         self._capturing = False
                         self.batcher.flush(force=True)
-                    if not self._closed_noted:
+                    if not self._closed_noted and not self.unassigned():
                         self._closed_noted = True
                         self.note("det_frames closed-hours")
                     self._window_open_at = None
