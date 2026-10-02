@@ -39,19 +39,27 @@ sudo ./deploy/install.sh
 
 ```bash
 v4l2-ctl --list-devices
-v4l2-ctl -d /dev/video0 --list-formats-ext   # MJPG で 1280x720 30fps があるか
+v4l2-ctl -d /dev/video0 --list-formats-ext   # MJPG で 1280x720 があるか
 ```
+
+試験で使っている ELP の USB カメラ（HD USB Camera）は、1280x720 だと 120fps しか選べない
+（30 を頼んでも 120 で開く。実際に届くのは明るさしだいで毎秒 50〜60 枚）。
+本体が `camera.fps`（30）を上限に間引くので、送るのは毎秒 30 枚前後になる。
 
 ## 4. 毎秒何枚撮れるかを測る
 
 ```bash
 sudo systemctl stop fservice-pi
+cd /opt/fservice-pi
 sudo -u fservice /opt/fservice-pi/venv/bin/python -m fservice_pi bench --config /etc/fservice-pi/config.toml
 # 解像度を変えて比べる
 sudo -u fservice /opt/fservice-pi/venv/bin/python -m fservice_pi bench --config /etc/fservice-pi/config.toml --width 1920 --height 1080
 ```
 
-見るもの: `[1] カメラ単体` と `[3] 通し` の枚数/秒、`圧縮待ち満杯` の回数、CPU 温度。
+見るもの: `[1] カメラ単体` と `[3] 通し` の枚数/秒（`送る分` が 30 前後）、`圧縮待ち満杯` の回数、CPU 温度。
+
+実機（Pi 5 4GB・ELP 1280x720）の結果: カメラ 49〜61 枚/秒、1 枚の処理 約 2.4ms（縮小 0.1・動き判定 0.9・JPEG 1.3）、
+JPEG 約 18KB、毎秒 61 枚通しても取りこぼし 0、CPU 50℃。
 
 ## 5. 動かす
 
@@ -59,6 +67,23 @@ sudo -u fservice /opt/fservice-pi/venv/bin/python -m fservice_pi bench --config 
 sudo systemctl restart fservice-pi
 journalctl -u fservice-pi -f      # 60 秒ごとに「申告」が出る
 ```
+
+店に割り当てる前（トークンが無い間）は撮らない。割り当てても、管理画面で撮影のスイッチが「切」なら
+カメラは止まったまま（申告の `cam_fps` が -1）。
+
+## 5b. 外から操作できるようにする（Raspberry Pi Connect）
+
+`ssh` は同じ Wi-Fi の中からしか入れない。外からも触れるように、事務所にいるうちに入れておく。
+
+```bash
+sudo apt install -y rpi-connect-lite
+rpi-connect on
+loginctl enable-linger        # ログアウトしても動き続ける
+rpi-connect signin            # 出た URL をブラウザで開き、会社の Raspberry Pi ID で承認
+```
+
+以後は https://connect.raspberrypi.com → Devices → 端末の「Connect via」→「Remote shell」で、
+ブラウザの中で同じ黒い画面が使える。
 
 ## 6. 出荷前のテスト
 
