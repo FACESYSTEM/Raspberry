@@ -142,6 +142,7 @@ class App:
                              may_send=lambda: not (self.defer() and self._capturing))
         self.hours = local_hours(cfg.capture.windows)
         self.face_enabled = True
+        self._config_seen = threading.Event()  # サーバから設定を 1 度でも受け取った
         self.face_params: dict = {}
         self.store_name = ""
         self.tid = terminal_id(cfg.server.terminal_instance_id)
@@ -287,6 +288,11 @@ class App:
         opened = False
         last_frame = time.monotonic()
         open_backoff = 1.0
+        # 起動直後は、サーバの設定（撮影のスイッチ・撮影窓）を最初の心拍で受け取るまで少し待つ。
+        # 待たないと、管理画面で「切」の端末でも起動のたびに数コマ撮って送ってしまう。
+        # サーバに繋がらないときは待ち切ってから手元の設定で撮る
+        if self.api.ready:
+            self._config_seen.wait(timeout=15)
         try:
             while not self._stop.is_set():
                 self._last_capture_loop = time.monotonic()
@@ -522,6 +528,7 @@ class App:
         if enabled != self.face_enabled:
             log.info("撮影のスイッチ（管理画面）: %s", "入" if enabled else "切")
         self.face_enabled = enabled
+        self._config_seen.set()
         fp = data.get("face_params")
         before = self.mode()
         self.face_params = fp if isinstance(fp, dict) else {}
