@@ -6,7 +6,8 @@ After=network-online.target time-sync.target
 [Service]
 Type=notify
 User=fservice
-Group=video
+# 主グループは fservice（設定ファイルを読むため）。カメラは video で使う
+SupplementaryGroups=video
 WorkingDirectory=/opt/fservice-pi
 ExecStart=/opt/fservice-pi/venv/bin/python -m fservice_pi run --config /etc/fservice-pi/config.toml
 # 落ちたら 5 秒で起こす。何度落ちても諦めない
