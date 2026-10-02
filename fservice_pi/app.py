@@ -149,7 +149,7 @@ class App:
         self._unauthorized = 0
         self._last_reannounce = -1e9
         self._latest_frame: Frame | None = None
-        self._raw_last_ms = 0
+        self._raw_due_ms = 0.0
         self._window_open_at: float | None = None  # 撮影窓が開いた時刻（det_frames_max_min の起点）
         self._auto_off = False
         self._closed_noted = False
@@ -342,10 +342,18 @@ class App:
                         self.note("det_frames auto-off")
                         self.batcher.flush(force=True)
                     continue
-                if fps < 30:
-                    if frame.t_ms - self._raw_last_ms < 1000 // fps:
-                        continue
-                self._raw_last_ms = frame.t_ms
+                # 30 以上は「来たコマ全部」だが、カメラによっては 30 を頼んでも 60〜120fps で
+                # 来る（ELP の 1280x720 は 120fps しか選べない）。camera.fps を上限に間引き、
+                # Pixel と同じ毎秒 30 枚前後に揃える
+                target = min(fps, self.cfg.camera.fps) if fps >= 30 else fps
+                step = 1000.0 / target
+                # 締め切りの 1/4 手前までは受ける（カメラが target ちょうどで来るときに、
+                # 時刻の揺れでコマを落とさないため）
+                if frame.t_ms < self._raw_due_ms - step / 4:
+                    continue
+                # 次の締め切りは前の締め切りから数える（コマ間隔と割り切れなくても平均が target になる）。
+                # 大きく遅れたら今から数え直す
+                self._raw_due_ms = max(self._raw_due_ms + step, frame.t_ms + step / 2)
                 self.c.add("raw_taken")
                 self.motion.record(frame.t_ms, self.judge.judge(frame.gray))
                 try:

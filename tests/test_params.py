@@ -105,3 +105,15 @@ def test_reannounce_after_401(tmp_path):
     t.join(2)
     assert calls[:3] == ["old", "old", "old"] and "new" in calls
     assert (tmp_path / "token").read_text() == "new"
+
+
+def test_fast_camera_capped_to_camera_fps(tmp_path):
+    # カメラが 30 を頼んでも 120fps で来る（ELP の 1280x720）。来たコマ全部ではなく毎秒 30 前後に揃える
+    app = _app(tmp_path, {})
+    import dataclasses
+    from fservice_pi.camera import FakeCamera
+    app.camera = FakeCamera(dataclasses.replace(app.cfg.camera, fps=120))
+    app.start(); time.sleep(3.2); app.request_stop(); app.shutdown()
+    snap = app.c.snapshot()
+    assert snap["raw_frames"] >= 250                  # 120fps で来ている
+    assert 80 <= snap["raw_taken"] <= 105             # 送るのは 30fps ぶん

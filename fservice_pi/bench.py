@@ -77,7 +77,10 @@ def bench(cfg: Config, seconds: float = 20.0):
     # 3) 通し（本番と同じ 2 スレッド）
     q: queue.Queue = queue.Queue(maxsize=cfg.capture.queue_max)
     stop = threading.Event()
-    counts = {"got": 0, "full": 0, "encoded": 0, "bytes": 0}
+    counts = {"got": 0, "taken": 0, "full": 0, "encoded": 0, "bytes": 0}
+    # 本番と同じく camera.fps を上限に間引く（カメラが頼んだより速く来るときのため）
+    step = 1000.0 / max(1, min(cfg.capture.raw_fps, cfg.camera.fps))
+    due = 0.0
 
     def encoder():
         while not stop.is_set() or not q.empty():
@@ -98,6 +101,10 @@ def bench(cfg: Config, seconds: float = 20.0):
         if f is None:
             continue
         counts["got"] += 1
+        if f.t_ms < due - step / 4:
+            continue
+        due = max(due + step, f.t_ms + step / 2)
+        counts["taken"] += 1
         judge.judge(f.gray)
         try:
             q.put_nowait(f)
@@ -108,8 +115,8 @@ def bench(cfg: Config, seconds: float = 20.0):
     th.join(timeout=10)
     cam.close()
     got = counts["got"]
-    print(f"[3] 通し {el:.0f} 秒: 撮れた {got / el:.1f} 枚/秒・圧縮できた {counts['encoded'] / el:.1f} 枚/秒・"
-          f"圧縮待ち満杯 {counts['full']} 回（{100 * counts['full'] / max(got, 1):.1f}%・本番ではディスクへ逃がす）・"
+    print(f"[3] 通し {el:.0f} 秒: 撮れた {got / el:.1f} 枚/秒・送る分 {counts['taken'] / el:.1f} 枚/秒・圧縮できた {counts['encoded'] / el:.1f} 枚/秒・"
+          f"圧縮待ち満杯 {counts['full']} 回（{100 * counts['full'] / max(counts['taken'], 1):.1f}%・本番ではディスクへ逃がす）・"
           f"全部送ると {counts['bytes'] / el / 1024 / 1024 * 3600 / 1024:.2f} GB/時")
     temp = None
     try:
