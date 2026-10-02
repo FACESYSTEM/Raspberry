@@ -142,6 +142,7 @@ class App:
                              may_send=lambda: not (self.defer() and self._capturing))
         self.hours = local_hours(cfg.capture.windows)
         self.face_enabled = True
+        self._hours_text = ""
         self._config_seen = threading.Event()  # サーバから設定を 1 度でも受け取った
         self.face_params: dict = {}
         self.store_name = ""
@@ -189,6 +190,16 @@ class App:
     def unassigned(self) -> bool:
         """サーバ宛てなのに、まだ店に割り当てられていない（トークンが無い）。"""
         return self.api.enabled and not self.api.ready
+
+    def why_not_capturing(self, when: dt.datetime) -> str:
+        """撮っていない理由（ログ用）。撮っているなら空。"""
+        if self.unassigned():
+            return "店に割り当てられる前"
+        if not self.face_enabled:
+            return "管理画面の撮影スイッチが「止める」"
+        if not self.hours.open_at(when):
+            return "撮影窓の外（%s）" % (self._hours_text or "手元の設定")
+        return ""
 
     def should_capture(self, when: dt.datetime) -> bool:
         # 割り当て前は撮らない（事務所で撮ったコマが、割り当て後に店のコマとして送られないように）
@@ -298,13 +309,14 @@ class App:
                 self._last_capture_loop = time.monotonic()
                 if not self.should_capture(dt.datetime.now()):
                     if opened:
-                        log.info("撮影窓の外（または管理画面で撮影停止・割り当て前）。カメラを止める")
+                        log.info("撮らない: %s。カメラを止める", self.why_not_capturing(dt.datetime.now()))
                         self.camera.close()
                         opened = False
                         self._capturing = False
                         self.batcher.flush(force=True)
                     if not self._closed_noted and not self.unassigned():
                         self._closed_noted = True
+                        log.info("撮らない: %s", self.why_not_capturing(dt.datetime.now()))
                         self.note("det_frames closed-hours")
                     self._window_open_at = None
                     self._stop.wait(5)
@@ -523,6 +535,9 @@ class App:
             new = hours.parse(bh)
             if bh.strip() and new.always:
                 log.warning("撮影窓を読めない（常に撮る）: %r", bh)
+            if bh != self._hours_text:
+                log.info("撮影窓（サーバ）: %s", bh or "なし（常に撮る）")
+            self._hours_text = bh
             self.hours = new
         enabled = bool(data.get("face_enabled", True))
         if enabled != self.face_enabled:
