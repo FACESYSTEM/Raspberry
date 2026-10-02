@@ -16,7 +16,7 @@ Raspberry Pi Imager で **Raspberry Pi OS Lite (64-bit)** を microSD に書く�
 
 ```bash
 sudo apt install -y git rsync
-git clone https://github.com/FACESYSTEM/Raspberry.git
+git clone -b claude/raspberry-pi-face-auth-auf1cr https://github.com/FACESYSTEM/Raspberry.git
 cd Raspberry
 sudo ./deploy/install.sh
 ```

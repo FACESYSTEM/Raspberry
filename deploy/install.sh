@@ -48,7 +48,8 @@ if [ ! -f "$CONF" ]; then
   mkdir -p "$(dirname "$CONF")"
   install -m 0640 -g fservice "$APP/config.example.toml" "$CONF"
   echo
-  echo "設定の見本を $CONF に置きました。token と store_id を書いてから:"
+  echo "設定の見本を $CONF に置きました（token は空のままでよい。管理画面で割り当てると自動で受け取る）。"
+  echo "先にカメラの確認と bench（docs/setup.md）をしてから:"
   echo "  sudo systemctl enable --now fservice-pi"
   exit 0
 fi
