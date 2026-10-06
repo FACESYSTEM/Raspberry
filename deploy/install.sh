@@ -42,7 +42,13 @@ EOF
 
 echo "== 常駐"
 install -m 0644 "$APP/systemd/fservice-pi.service" /etc/systemd/system/fservice-pi.service
+install -m 0644 "$APP/systemd/fservice-wifi.service" /etc/systemd/system/fservice-wifi.service
 systemctl daemon-reload
+
+echo "== Wi-Fi を Mac から書き換える口（bootfs の fservice-wifi.txt）"
+systemctl enable fservice-wifi
+# 見本を置く（すでにあれば触らない）
+"$APP/venv/bin/python" -c "import sys; sys.path.insert(0, '$APP'); from fservice_pi import wifi; wifi.apply()" || true
 
 if [ ! -f "$CONF" ]; then
   mkdir -p "$(dirname "$CONF")"

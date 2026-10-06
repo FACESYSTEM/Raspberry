@@ -1,0 +1,15 @@
+[Unit]
+Description=F-SERVICE Pi: bootfs の fservice-wifi.txt から Wi-Fi を登録する
+# Mac から書き換えた Wi-Fi を、つなぎに行く前に登録しておく
+After=NetworkManager.service
+Wants=NetworkManager.service
+Before=network-online.target fservice-pi.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/fservice-pi
+ExecStart=/opt/fservice-pi/venv/bin/python -m fservice_pi wifi
+TimeoutStartSec=90
+
+[Install]
+WantedBy=multi-user.target

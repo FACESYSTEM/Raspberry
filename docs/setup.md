@@ -85,6 +85,29 @@ rpi-connect signin            # 出た URL をブラウザで開き、会社の 
 以後は https://connect.raspberrypi.com → Devices → 端末の「Connect via」→「Remote shell」で、
 ブラウザの中で同じ黒い画面が使える。
 
+## 5c. 店の Wi-Fi を入れる
+
+事務所にいるうちに、Pi に直接登録するのが確実（その場に無い Wi-Fi でも登録できる）:
+
+```bash
+sudo nmcli connection add type wifi con-name portellen ssid "店のWi-Fi名" wifi-sec.key-mgmt wpa-psk wifi-sec.psk "パスワード"
+```
+
+現場で Wi-Fi が変わったときなど、Pi に入れないときは Mac から書き換えられる:
+
+1. Pi の電源を切り、起動ディスク（SSD か SD カード）を Mac に挿す
+2. Mac に出てくる `bootfs` の `fservice-wifi.txt` に書いて保存する
+   （テキストエディットなら「フォーマット」→「標準テキストにする」にしてから保存）
+   ```
+   ssid=店のWi-Fi名
+   password=パスワード
+   ```
+3. Mac で取り出してから Pi に戻し、電源を入れる
+
+起動のたびに `fservice-wifi.service` が読んで登録し、パスワードを消して結果（OK / NG）を
+同じファイルの一番下に書き直す。結果は Mac で開けば見える。ログは
+`journalctl -u fservice-wifi`。
+
 ## 6. 出荷前のテスト
 
 | # | 項目 | 確認方法 |
