@@ -38,7 +38,7 @@ class Test画面の名前:
         o = OrgProfile.display()
         o.name = "変更後の名前"
         db.session.commit()
-        assert "変更後の名前" in as_owner.get("/partners").get_data(as_text=True)
+        assert "変更後の名前" in as_owner.get("/guests").get_data(as_text=True)
 
     def test_表示する法人は1つだけ(self, app, db, as_owner):
         """複数立つと、どちらが出るか分からなくなる。"""

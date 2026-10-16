@@ -93,4 +93,4 @@ class Test役割の並び:
         _login(app, client, "master")
         with app.test_request_context():
             pass
-        assert client.post("/partners/new", data={"name": "架空商事"}).status_code in (302, 200)
+        assert client.post("/guests/new", data={"name": "架空 太郎"}).status_code in (302, 200)

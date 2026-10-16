@@ -6,7 +6,7 @@
 import warnings
 from datetime import datetime, timezone
 
-from app.models import ChangeHistory, Partner
+from app.models import ChangeHistory, Guest
 from app.timeutil import JST, fmt, to_jst, utcnow
 
 
@@ -57,13 +57,13 @@ class Test画面での表示:
         from tests.conftest import _login
         _login(app, client, "owner")
         with app.app_context():
-            p = Partner(name="テスト商事")
+            p = Guest(name="テスト 太郎")
             db.session.add(p)
             db.session.commit()
-            h = ChangeHistory.record("partner", p.id, "name", "旧", "新")
+            h = ChangeHistory.record("guest", p.id, "名前", "旧", "新")
             h.created_at = datetime(2026, 8, 17, 23, 0)     # UTC
             db.session.commit()
             pid = p.id
-        body = client.get(f"/partners/{pid}").get_data(as_text=True)
+        body = client.get(f"/guests/{pid}").get_data(as_text=True)
         assert "2026-08-18 08:00" in body      # JST
         assert "2026-08-17 23:00" not in body  # UTCが漏れていない

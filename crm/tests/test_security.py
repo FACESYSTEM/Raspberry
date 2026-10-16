@@ -11,25 +11,54 @@ class Test役割:
     def test_管理者は入れる(self, as_owner):
         assert as_owner.get("/admin").status_code == 200
 
-    def test_社外の方は書けない(self, as_outside, app, db):
+    def test_スタッフはゲストを直せる(self, as_staff, app, db):
         from app.extensions import db as _db
-        from app.models import Partner
+        from app.models import Guest
         with app.app_context():
-            p = Partner(name="見本")
-            _db.session.add(p)
+            x = Guest(name="見本")
+            _db.session.add(x)
             _db.session.commit()
-            pid = p.id
-        r = as_outside.patch(f"/api/partners/{pid}",
+            gid = x.id
+        r = as_staff.patch(f"/api/guests/{gid}",
                            json={"field": "name", "value": "変えた"})
-        assert r.status_code == 403
-
-    def test_社外の方には何も出さない(self, as_outside):
-        """**いまは器だけ。**何を見せるかが決まるまで出さない"""
-        from app.extensions import db as _db
-        from app.models import Partner
-        r = as_outside.get("/partners")
         assert r.status_code == 200
-        assert "1件も" in r.get_data(as_text=True) or "ありません" in r.get_data(as_text=True)
+
+
+class Test知らない役割:
+    """**消した役割が残っていても漏れない。**
+
+    ひな形にあった `outside`（社外の方）は外した。古い利用者が残っていたときに、
+    スタッフとして全件見える、を起こさない。
+    """
+
+    @pytest.fixture()
+    def as_gone(self, app, client):
+        from tests.conftest import _login
+        _login(app, client, "outside")
+        return client
+
+    def _guest(self, app):
+        from app.extensions import db as _db
+        from app.models import Guest
+        with app.app_context():
+            x = Guest(name="見えてはいけない")
+            _db.session.add(x)
+            _db.session.commit()
+            return x.id
+
+    def test_一覧に1件も出さない(self, as_gone, app):
+        self._guest(app)
+        assert "見えてはいけない" not in as_gone.get("/guests").get_data(as_text=True)
+
+    def test_詳細も開けない(self, as_gone, app):
+        gid = self._guest(app)
+        assert as_gone.get(f"/guests/{gid}").status_code == 404
+
+    def test_書けない(self, as_gone, app):
+        gid = self._guest(app)
+        r = as_gone.patch(f"/api/guests/{gid}",
+                          json={"field": "name", "value": "変えた"})
+        assert r.status_code == 403
 
 
 class Test秘密の比較:
@@ -52,9 +81,37 @@ class Test秘密の比較:
 class Testスコープ:
     def test_未ログインには1件も返さない(self, app, db):
         from app.extensions import db as _db
-        from app.models import Partner
+        from app.models import Guest
         from app.security import scope_query
         with app.test_request_context():
-            _db.session.add(Partner(name="見本"))
+            _db.session.add(Guest(name="見本"))
             _db.session.commit()
-            assert scope_query(_db.session.query(Partner), Partner).count() == 0
+            assert scope_query(_db.session.query(Guest), Guest).count() == 0
+
+
+class Testマスターを作らせない:
+    """**選択肢に出していなくても、フォームを書き換えれば送れる。**
+
+    ひな形では管理者がマスターを招待・昇格できてしまっていた。
+    """
+
+    def test_招待でマスターにならない(self, as_owner, app):
+        from app.models import User
+        as_owner.post("/admin/users", data={"email": "x@test", "name": "x",
+                                            "role": "master"})
+        with app.app_context():
+            assert User.query.filter_by(email="x@test").one().role == "staff"
+
+    def test_役割の変更でマスターにならない(self, as_owner, app):
+        from app.extensions import db as _db
+        from app.models import User
+        with app.app_context():
+            u = User(email="y@test", name="y", role="staff")
+            _db.session.add(u)
+            _db.session.commit()
+            uid = u.id
+        r = as_owner.post(f"/admin/users/{uid}", data={"action": "role",
+                                                       "role": "master"})
+        assert r.status_code == 403
+        with app.app_context():
+            assert _db.session.get(User, uid).role == "staff"

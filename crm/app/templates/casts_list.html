@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}キャスト{% endblock %}
+{% block content %}
+<div class="card">
+  <div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap">
+    <h2 style="margin:0">キャスト</h2>
+    <span class="hint">{{ rows|length }}人{% if show_archived %}（在籍から外した人）{% endif %}</span>
+  </div>
+  <div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap">
+    <a class="btn {{ 'active' if not show_archived }}" href="{{ url_for('main.casts') }}">在籍</a>
+    {% if archived %}
+    <a class="btn {{ 'active' if show_archived }}" href="{{ url_for('main.casts', archived=1) }}">
+      在籍から外した人 {{ archived }}人</a>
+    {% endif %}
+  </div>
+</div>
+
+<div class="card tblwrap">
+  <table>
+    <thead><tr><th class="num">番号</th><th>名前</th><th>表記</th>
+      <th class="num">担当ゲスト</th><th>要確認</th></tr></thead>
+    <tbody>
+    {% for c in rows %}
+      <tr>
+        <td class="num">{{ c.cast_no if c.cast_no is not none else '番号なし' }}</td>
+        <td><a href="{{ url_for('main.cast_detail', cid=c.id) }}">{{ c.name }}</a></td>
+        <td class="hint">{{ c.label }}</td>
+        <td class="num">{{ "{:,}".format(c.active_assignments|length) }}</td>
+        <td>{% for i in c.issues %}<span class="badge warn">{{ i }}</span> {% endfor %}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="5" class="hint">{{ '在籍から外した人はいません。' if show_archived else 'キャストが登録されていません。' }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <p class="hint" style="margin:8px 0 0">担当ゲストは、いま担当しているゲスト（一覧から下げたゲストを除く）の数です。</p>
+</div>
+
+{% if is_owner() %}
+<div class="card">
+  <h3 style="margin-top:0">追加</h3>
+  <form method="post" action="{{ url_for('main.cast_new') }}"
+        style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input name="cast_no" placeholder="番号（空でも可）" style="width:140px">
+    <input name="name" placeholder="名前" required>
+    <button class="btn" type="submit">追加</button>
+    <span class="hint">番号の無いキャストも登録できます（CA_Noなし_〇〇 と出ます）</span>
+  </form>
+</div>
+{% endif %}
+{% endblock %}

@@ -12,7 +12,7 @@ from ..timeutil import utcnow
 from ..extensions import db
 from ..mailer import send
 from ..models import ChangeHistory, User
-from ..security import (PREVIEW_KEY, PREVIEW_SCOPE_KEY, PREVIEWABLE,
+from ..security import (PREVIEW_KEY, PREVIEWABLE,
                         ROLE_LABEL, real_is_master)
 
 bp = Blueprint("auth", __name__)
@@ -78,16 +78,12 @@ def preview(onoff):
     back = request.form.get("back") or request.referrer or url_for("main.dashboard")
     if onoff in PREVIEWABLE:
         session[PREVIEW_KEY] = onoff
-        sid = (request.form.get("scope_id") or "").strip()
-        session[PREVIEW_SCOPE_KEY] = (
-            int(sid) if onoff == "outside" and sid.isdigit() else None)
         # **記録に残す。**あとから「誰が見たのか」を追えるようにする
         ChangeHistory.record("user", current_user.id, "見え方の確認",
                              "", ROLE_LABEL.get(onoff, onoff), current_user.id)
         db.session.commit()
     else:
         session.pop(PREVIEW_KEY, None)
-        session.pop(PREVIEW_SCOPE_KEY, None)
     return redirect(back)
 
 

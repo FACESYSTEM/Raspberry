@@ -72,13 +72,6 @@ def as_staff(app, client):
 
 
 @pytest.fixture()
-def as_outside(app, client):
-    """社外の方。**書けない。**"""
-    _login(app, client, "outside")
-    return client
-
-
-@pytest.fixture()
 def as_master(app, client):
     """当社（開発側）。**作りかけの機能も見える。**"""
     _login(app, client, "master", email="master@test")

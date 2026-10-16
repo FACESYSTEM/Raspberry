@@ -3,8 +3,9 @@
     python scripts/seed_choices.py            # 何が入るか
     python scripts/seed_choices.py --apply
 
-主担当・顧問種別は、いただいた資料に実在した値だけを入れる。
-**こちらで勝手に増やさない**（社内に無い言葉を持ち込まない／規約 §7）。
+担当レベルは、Notion の書き出しに実在した値だけを入れる（規約 §7.3）。
+**こちらで勝手に増やさない・意味を推測して名前を変えない**（店に無い言葉を持ち込まない）。
+`メインA2`（2件）は2つの値の組み合わせなので選択肢にしない。
 """
 import argparse
 import sys
@@ -16,10 +17,9 @@ from app import create_app                    # noqa: E402
 from app.extensions import db                 # noqa: E402
 from app.models import Choice                 # noqa: E402
 
+# Notion の件数順（メイン161・完全159・A1 43・A2 37・A 22・B 1）
 INIT = {
-    "owner": ["〈担当A〉", "〈担当B〉", "〈担当C〉", "〈担当D〉"],
-    # ヒアリング②Q3で「OEM加盟料＋DX利用料」と回答があったため DX利用料 を追加
-    "service_kind": ["経営顧問", "FC", "OEM", "DX利用料", "社保/法人税 削減スキーム"],
+    "level": ["メイン", "完全", "A1", "A2", "A", "B"],
 }
 
 

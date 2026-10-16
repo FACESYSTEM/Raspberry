@@ -1,0 +1,225 @@
+{% extends "base.html" %}
+{% block title %}{{ x.label }}{% endblock %}
+{# 押すと直せる項目。**空のときの書き方を項目ごとに決める**（「未記録」と「分からない」は違う） #}
+{% macro ed(field, value, label, empty='未記録', hint='') %}
+  <div class="field"><label>{{ label }}</label>
+    <div>
+    {% if can_edit() %}
+      <span class="ed" data-field="{{ field }}" data-value="{{ '' if value is none else value }}"
+            data-empty="{{ empty }}" title="押すと直せます">{{ empty if value is none or value == '' else value }}</span>
+    {% else %}<span>{{ empty if value is none or value == '' else value }}</span>{% endif %}
+    {% if hint %}<div class="hint">{{ hint }}</div>{% endif %}
+    </div>
+  </div>
+{% endmacro %}
+{% block content %}
+<div class="card">
+  <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
+    <h2 style="margin:0">{{ x.label }}</h2>
+    {% for i in x.issues %}<span class="badge warn">{{ i }}</span>{% endfor %}
+    {% if x.archived_at %}<span class="badge">一覧から下げています</span>{% endif %}
+    <a class="btn" style="margin-left:auto" href="{{ url_for('main.guests') }}">一覧へ</a>
+  </div>
+  <p class="hint" style="margin:8px 0 0">
+    {% if can_edit() %}<b>点線の項目は押すと直せます。</b>直した時点で保存されます（ボタンはありません）。
+    {% else %}閲覧のみの権限です。{% endif %}</p>
+</div>
+
+<div class="card">
+  <h3 style="margin-top:0">ゲスト</h3>
+  {{ ed('guest_no', x.guest_no, 'ゲスト番号', '番号なし', '数字だけ入れます（画面では Gu_ を付けて出します）') }}
+  {{ ed('name', x.name, '名前', '名前なし') }}
+  {{ ed('kana', x.kana, 'フリガナ') }}
+  {{ ed('corp', x.corp.name if x.corp else none, '法人・団体', 'なし／未記録', '同じ名前の法人があればそこに入ります。㈱と株式会社は別のものとして扱います') }}
+  {{ ed('corp_kana', x.corp.kana if x.corp else none, '法人・団体のフリガナ', '未記録', 'この法人・団体のゲスト全員に効きます' if x.corp else '先に法人・団体を入れてください') }}
+  {{ ed('title', x.title, '役職') }}
+  {{ ed('neck_name', x.neck_name, 'ネック名') }}
+  {{ ed('note', x.note, '備考', 'なし') }}
+  {{ ed('registered_on', x.registered_on.isoformat() if x.registered_on else none, '登録日', '分からない', '2026-10-16 の形で入れます') }}
+</div>
+
+<div class="card">
+  <h3 style="margin-top:0">誕生日</h3>
+  <p class="hint" style="margin-top:0">
+    {% if x.birthday_text %}<b>{{ x.birthday_text }}</b>{% if x.age is not none %}（{{ x.age }}歳）{% endif %}。{% endif %}
+    <b>年が分からないときは空のままにしてください。</b>今年の年で埋めると、年齢がでたらめになります。</p>
+  {{ ed('birth_month', x.birth_month, '月', '分からない') }}
+  {{ ed('birth_day', x.birth_day, '日', '分からない') }}
+  {{ ed('birth_year', x.birth_year, '年', '分からない') }}
+</div>
+
+<div class="card">
+  <h3 style="margin-top:0">連絡先</h3>
+  {{ ed('tel', x.tel, '電話') }}
+  {{ ed('email', x.email, 'メール') }}
+  {{ ed('address', x.address, '住所') }}
+</div>
+
+{# **「担当なし」と「分からない」を分ける**（規約 §7.3） #}
+<div class="card">
+  <h3 style="margin-top:0">担当キャスト</h3>
+  {% if x.active_assignments %}
+  <div class="tblwrap"><table>
+    <thead><tr><th>キャスト</th><th>担当レベル</th><th>付記</th><th></th></tr></thead>
+    <tbody>
+    {% for a in x.active_assignments %}
+      <tr><td>{% if feature_open('casts') %}<a href="{{ url_for('main.cast_detail', cid=a.cast.id) }}">{{ a.cast.label }}</a>{% else %}{{ a.cast.label }}{% endif %}</td>
+        <td>{{ a.level or '未選択' }}</td><td>{{ a.mark or '' }}</td>
+        <td>{% if can_edit() %}
+          <form method="post" action="{{ url_for('main.assignment_end', aid=a.id) }}"
+                onsubmit="return confirm('{{ a.cast.name }} を担当から外します。記録は残ります。よろしいですか。')">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn" type="submit">担当から外す</button>
+          </form>{% endif %}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% elif x.no_cast %}
+  <p><b>担当なし</b>（確かめ済み）</p>
+  {% else %}
+  <p><b>分からない</b>　<span class="hint">担当の記録がありません。担当なしと分かっているなら、下のボタンで記録してください。</span></p>
+  {% endif %}
+
+  {% if can_edit() %}
+  <form method="post" action="{{ url_for('main.assignment_new', gid=x.id) }}"
+        style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <select name="cast_id" required>
+      <option value="">キャストを選ぶ</option>
+      {% for c in casts %}<option value="{{ c.id }}">{{ c.label }}</option>{% endfor %}
+    </select>
+    <select name="level">
+      <option value="">担当レベル（未選択）</option>
+      {% for l in levels %}<option value="{{ l }}">{{ l }}</option>{% endfor %}
+    </select>
+    <input name="mark" placeholder="付記（例：A）" style="width:120px">
+    <button class="btn" type="submit">担当に付ける</button>
+  </form>
+  {% if not casts %}<p class="hint">キャストが登録されていません。{% if is_owner() and feature_open('casts') %}<a href="{{ url_for('main.casts') }}">キャストの画面</a>で足してください。{% else %}管理者に足してもらってください。{% endif %}</p>{% endif %}
+  {% if not x.active_assignments %}
+  <form method="post" action="{{ url_for('main.guest_no_cast', gid=x.id) }}" style="margin-top:8px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button class="btn" type="submit">{{ '「分からない」に戻す' if x.no_cast else '担当なしと確かめた' }}</button>
+  </form>
+  {% endif %}
+  {% endif %}
+</div>
+
+<div class="card">
+  <h3 style="margin-top:0">ボトル</h3>
+  {% if x.bottles %}
+  <div class="tblwrap"><table>
+    <thead><tr><th>ボトル（書かれたとおり）</th><th>銘柄</th><th class="num">番号</th><th>置き場所</th><th>状態</th><th></th></tr></thead>
+    <tbody>
+    {# キープ中を先に。**飲み切りも消さずに下に並べる** #}
+    {% for b in x.keeping_bottles + (x.bottles|selectattr('finished_at')|list) %}
+      <tr{% if b.finished_at %} style="opacity:.55"{% endif %}>
+        <td>{{ b.label }}</td><td>{{ b.brand or '' }}</td>
+        <td class="num">{{ b.keep_no if b.keep_no is not none else '' }}</td>
+        <td>{{ b.place or '' }}</td>
+        <td>{{ '飲み切り（%s）'|format(b.finished_at|jst('%Y-%m-%d')) if b.finished_at else 'キープ中' }}</td>
+        <td>{% if can_edit() %}
+          <form method="post" action="{{ url_for('main.bottle_finish', bid=b.id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn" type="submit">{{ 'キープに戻す' if b.finished_at else '飲み切り' }}</button>
+          </form>{% endif %}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}<p class="hint">ボトルの記録はありません。</p>{% endif %}
+  {% if can_edit() %}
+  <form method="post" action="{{ url_for('main.bottle_new', gid=x.id) }}"
+        style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input name="label" placeholder="ボトル（例：マッカラン⑩P）" required>
+    <input name="brand" placeholder="銘柄" style="width:120px">
+    <input name="keep_no" placeholder="番号" style="width:70px">
+    <input name="place" placeholder="置き場所" style="width:140px">
+    <button class="btn" type="submit">足す</button>
+    <span class="hint">1本ずつ足します。銘柄・番号・置き場所は分かる分だけで構いません</span>
+  </form>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h3 style="margin-top:0">来店　{{ x.visit_count }}回{% if x.last_visit_on %}（最終 {{ x.last_visit_on.strftime('%Y-%m-%d') }}）{% endif %}</h3>
+  <p class="hint" style="margin-top:0">記録された来店だけを数えています。<b>記録が無いことは、来ていないことではありません。</b></p>
+  {% if x.visits %}
+  <div class="tblwrap"><table>
+    <thead><tr><th>来店日</th><th>メモ</th><th></th></tr></thead>
+    <tbody>
+    {% for v in x.visits|sort(attribute='visited_on', reverse=True) %}
+      <tr{% if v.archived_at %} style="opacity:.55;text-decoration:line-through"{% endif %}>
+        <td>{{ v.visited_on.strftime('%Y-%m-%d') }}</td><td>{{ v.note or '' }}</td>
+        <td>{% if can_edit() %}
+          <form method="post" action="{{ url_for('main.visit_cancel', vid=v.id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn" type="submit">{{ '取り消しを戻す' if v.archived_at else '取り消す' }}</button>
+          </form>{% endif %}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}<p class="hint">来店の記録はありません。</p>{% endif %}
+  {% if can_edit() %}
+  <form method="post" action="{{ url_for('main.visit_new', gid=x.id) }}"
+        style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input name="visited_on" type="date" value="{{ today.isoformat() }}" max="{{ today.isoformat() }}">
+    <input name="note" placeholder="メモ" style="flex:1;min-width:160px">
+    <button class="btn" type="submit">来店を記録</button>
+  </form>
+  {% endif %}
+</div>
+
+{% if can_edit() %}
+<div class="card">
+  <form method="post" action="{{ url_for('main.guest_archive', gid=x.id) }}"
+        onsubmit="return confirm('{{ '一覧に戻します。' if x.archived_at else '一覧から下げます。来店・ボトル・履歴は残ります。' }}よろしいですか。')">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button class="btn" type="submit">{{ '一覧に戻す' if x.archived_at else '一覧から下げる' }}</button>
+    {# **消さない。**来店とボトルの履歴が要る #}
+    <span class="hint">　消しません。下げるだけです（来店・ボトル・履歴は残ります）</span>
+  </form>
+</div>
+{% endif %}
+
+<div class="card">
+  <h3 style="margin-top:0">対応履歴</h3>
+  {% if can_edit() %}
+  <form method="post" action="{{ url_for('main.comment_new') }}"
+        style="display:flex;gap:8px;margin-bottom:12px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="entity_id" value="{{ x.id }}">
+    <input name="body" placeholder="申し送り・メモを書く" style="flex:1">
+    <button class="btn" type="submit">残す</button>
+  </form>
+  {% endif %}
+  {% for c in comments %}
+  <div style="border-bottom:1px solid var(--grid);padding:6px 0">
+    <div class="hint">{{ c.created_at|jst }}
+      {{ c.author.name if c.author else '' }}</div>
+    <div style="white-space:pre-wrap">{{ c.body }}</div>
+  </div>
+  {% else %}<p class="hint">まだありません。</p>{% endfor %}
+</div>
+
+<div class="card">
+  <h3 style="margin-top:0">変更履歴</h3>
+  <div class="tblwrap"><table>
+    <thead><tr><th style="width:150px">いつ</th><th style="width:110px">だれ</th>
+      <th style="width:140px">項目</th><th>内容</th></tr></thead>
+    <tbody>
+    {% for h in history %}
+      <tr><td>{{ h.created_at|jst }}</td>
+        <td>{{ h.user.name if h.user else '—' }}</td>
+        <td>{{ h.field }}</td>
+        <td>{{ h.old_value or '（空）' }} → {{ h.new_value or '（空）' }}</td></tr>
+    {% else %}<tr><td colspan="4" class="hint">まだありません。</td></tr>{% endfor %}
+    </tbody>
+  </table></div>
+</div>
+{% endblock %}
+{% block script %}
+const PATCH_URL = "{{ url_for('main.guest_patch', gid=x.id) }}";
+{% include "_detail_js.html" %}
+{% endblock %}

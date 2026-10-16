@@ -1,8 +1,4 @@
-{# ロゴ。**明るい背景用と暗い背景用の2枚**を持ち、CSSで出し分ける。
-   1枚だけだと、どちらかのテーマで文字が消える #}
-<div class="logo">
-  <img class="on-light" src="{{ url_for('static', filename='logo-light.png') }}?v={{ STATIC_V }}"
-       alt="{{ ORG_NAME }}">
-  <img class="on-dark" src="{{ url_for('static', filename='logo-dark.png') }}?v={{ STATIC_V }}"
-       alt="{{ ORG_NAME }}">
-</div>
+{# ロゴ。**画像を持つまでは名前を文字で出す。**
+   ひな形の画像を残すと、別の会社の名前が画面に出る。
+   名前は「自社の情報」から取る（コードに社名を埋めない） #}
+<div class="logo"><span class="logotext">{{ ORG_NAME }}</span></div>

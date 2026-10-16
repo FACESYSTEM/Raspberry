@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block title %}ゲスト{% endblock %}
+{% macro th(key, label, cls='') %}
+  {% set d = 'desc' if (sort == key and dir == 'asc') else 'asc' %}
+  <th class="{{ cls }}"><a href="{{ url_for('main.guests', q=q, sort=key, dir=d,
+                          issues=request.args.get('issues'), issue=issue or None,
+                          archived=request.args.get('archived')) }}">
+    {{ label }}{% if sort == key %}{{ ' ▲' if dir == 'asc' else ' ▼' }}{% endif %}</a></th>
+{% endmacro %}
+{% block content %}
+<div class="card">
+  <div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap">
+    <h2 style="margin:0">ゲスト</h2>
+    <span class="hint">{{ "{:,}".format(total) }}件{% if issue %}（要確認：{{ issue }}）{% endif %}</span>
+    <form style="margin-left:auto;display:flex;gap:6px" method="get">
+      <input name="q" value="{{ q }}" placeholder="名前・番号・法人・ボトル・キャスト">
+      <button class="btn" type="submit">探す</button>
+    </form>
+  </div>
+  <div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap">
+    <a class="btn {{ 'active' if not request.args.get('issues') and not issue and not show_archived }}"
+       href="{{ url_for('main.guests', q=q) }}">すべて</a>
+    {# **汚れているデータを消さず、ここに出す。**正しさは検出で担保する #}
+    <a class="btn {{ 'active' if request.args.get('issues') or issue }}"
+       href="{{ url_for('main.guests', q=q, issues=1) }}">要確認だけ</a>
+    {% if archived %}
+    <a class="btn {{ 'active' if show_archived }}"
+       href="{{ url_for('main.guests', q=q, archived=1 if not show_archived else None) }}">
+      下げたもの {{ archived }}件</a>
+    {% endif %}
+  </div>
+</div>
+
+<div class="card tblwrap">
+  <table>
+    <thead><tr>
+      {{ th('guest_no', '番号', 'num') }}{{ th('name', '名前') }}{{ th('kana', 'フリガナ') }}
+      <th>法人・団体</th><th>担当</th><th>ボトル</th>
+      {{ th('last_visit', '最終来店') }}<th>要確認</th>
+    </tr></thead>
+    <tbody>
+    {% for x in rows %}
+      <tr{% if x.archived_at %} style="opacity:.55"{% endif %}>
+        <td class="num">{{ 'Gu_%d'|format(x.guest_no) if x.guest_no is not none else '番号なし' }}</td>
+        <td><a href="{{ url_for('main.guest_detail', gid=x.id) }}">{{ x.name or '（名前なし）' }}</a></td>
+        <td>{{ x.kana or '' }}</td>
+        <td>{{ x.corp.name if x.corp else '' }}</td>
+        <td>{% for a in x.active_assignments %}{{ a.cast.name }}{% if a.level %}（{{ a.level }}）{% endif %}{{ '、' if not loop.last }}{% else %}
+          <span class="hint">{{ '担当なし' if x.no_cast else '分からない' }}</span>{% endfor %}</td>
+        <td>{% for b in x.keeping_bottles %}{{ b.label }}{{ '、' if not loop.last }}{% endfor %}</td>
+        <td>{{ x.last_visit_on.strftime('%Y-%m-%d') if x.last_visit_on else '' }}</td>
+        <td>{% for i in x.issues %}<span class="badge warn">{{ i }}</span> {% endfor %}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="8" class="hint">{% if q %}「{{ q }}」に当たるゲストはいません。{% else %}ありません。{% endif %}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <p class="hint" style="margin:8px 0 0">最終来店が空のゲストは<b>来店の記録が無い</b>だけで、来ていないとは限りません。</p>
+</div>
+
+{% if total > per_page %}
+<div class="card" style="display:flex;gap:8px;align-items:center">
+  {% set keep = dict(q=q, sort=sort, dir=dir, issues=request.args.get('issues'), issue=issue or None, archived=request.args.get('archived')) %}
+  {% if page > 1 %}<a class="btn" href="{{ url_for('main.guests', page=page-1, **keep) }}">前</a>{% endif %}
+  <span class="hint">{{ page }} / {{ (total + per_page - 1) // per_page }}</span>
+  {% if page * per_page < total %}<a class="btn" href="{{ url_for('main.guests', page=page+1, **keep) }}">次</a>{% endif %}
+</div>
+{% endif %}
+
+{% if can_edit() %}
+<div class="card">
+  <h3 style="margin-top:0">追加</h3>
+  <form method="post" action="{{ url_for('main.guest_new') }}"
+        style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input name="guest_no" placeholder="番号（空でも可）" style="width:140px">
+    <input name="name" placeholder="名前（空でも可）">
+    <button class="btn" type="submit">追加</button>
+    <span class="hint">番号か名前のどちらかがあれば登録できます。残りは詳細の画面で埋めます</span>
+  </form>
+</div>
+{% endif %}
+{% endblock %}

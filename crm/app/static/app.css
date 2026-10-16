@@ -24,6 +24,7 @@ a{color:var(--accent)}
   position:sticky;top:0;height:100vh}
 .side .brand{display:block;padding:18px 16px 14px}
 .side .brand img{width:100%;max-width:150px;height:auto;display:block}
+.side .brand .brandtext{display:block;font-weight:700;font-size:15px;color:var(--ink);line-height:1.4;word-break:break-all}
 .side .nav{flex:1;overflow-y:auto;padding-bottom:10px}
 .side .item{display:block;padding:7px 16px;color:var(--ink);text-decoration:none}
 .side .item:hover{background:var(--surface)}
@@ -263,6 +264,7 @@ details.contract>summary .hint{display:block;margin-top:2px}
 /* ロゴ。明るい配色に固定したので、暗い背景用は使わない */
 .logo{text-align:center;margin-bottom:26px}
 .logo img{width:230px;max-width:70%;height:auto}
+.logo .logotext{font-weight:700;font-size:20px;color:var(--ink)}
 .logo .on-dark{display:none}
 
 

@@ -8,37 +8,38 @@ from flask_login import current_user
 # 別のアカウントを作らずに、ログインし直さずに確認できるようにする。
 # 見え方を確かめずに公開すると、隠したつもりのものが見えている事故が起きる。
 #
-# **役割ごとに用意する。**「管理者だけ確認できる」だと、担当者・閲覧のみ・
-# 顧問先の見え方は誰も見ないまま公開されることになる。
+# **役割ごとに用意する。**「管理者だけ確認できる」だと、スタッフの見え方は
+# 誰も見ないまま公開されることになる。
 PREVIEW_KEY = "preview_as"
-PREVIEW_SCOPE_KEY = "preview_scope_id"
 
 # 上ほど強い。**役割は最初から複数用意する。**
 # 全員が管理者から始めると、あとで割ることになり必ず漏れる。
 #
 # `master` は**開発側**（当社）のための役割。作りかけの機能も見える。
-# 先方の管理者（`owner`）には、**公開した機能だけ**を見せる。
-# `outside` は**社外の方**。自分に紐づくものだけが見える（`scope_query`）。
+# 店の管理者（`owner`）には、**公開した機能だけ**を見せる。
+# `staff` は店のスタッフ。ゲスト・ボトル・来店・担当を見て直す。
 #
 # **実在しない役割を置かない。**
-# 使われない役割は、選ぶときに迷わせるだけ。必要になったらここに足す
-ROLES = ("master", "owner", "staff", "outside")
-ROLE_LABEL = {"master": "マスター", "owner": "管理者", "staff": "担当者",
-              "outside": "社外"}
+# 使われない役割は、選ぶときに迷わせるだけ。必要になったらここに足す。
+# ひな形にあった `outside`（社外の方）は外した。店の外の人がログインする
+# 場面が無いため。キャスト本人に見せることになったら、役割を足して
+# `scope_query` で担当ゲストだけに絞る（規約 §7.5）。
+#
+# **`staff` を「担当者」と呼ばない。**この店で「担当」はキャストのこと
+ROLES = ("master", "owner", "staff")
+ROLE_LABEL = {"master": "マスター", "owner": "管理者", "staff": "スタッフ"}
 
-# 無くした役割の行き先。**古いデータを弾かない**（土台 §4.1）
-RETIRED_ROLES = {"manager": "staff", "guest": "staff"}
+# 無くした役割の行き先。**古いデータを弾かない**（土台 §4.1）。
+# **権限を広げる向きには写さない。**ひな形の `outside` は自分の分しか
+# 見えない役割だったので、ここに入れない（入れるとスタッフとして全件見える）
+RETIRED_ROLES = {"manager": "staff"}
 
-# 自社の人の役割。**社外の方はここに入らない**
+# 店の人の役割。**ここに無い役割には何も見せない**（`scope_query`）
 STAFF_ROLES = ("master", "owner", "staff")
-
-# 社外の方の役割。**何を見せるかが決まるまで、何も見せない。**
-# 決まったら、機能「社外の方の画面」を公開する
-OUTSIDE_ROLES = ("outside",)
 
 # 確認モードで名乗れる役割。**マスターは入れない。**
 # マスターの見え方を確認する必要はないし、抜けられなくなる
-PREVIEWABLE = ("owner", "staff", "outside")
+PREVIEWABLE = ("owner", "staff")
 
 
 def role_required(*roles):
@@ -88,13 +89,6 @@ def preview_role():
     return role if role in PREVIEWABLE else None
 
 
-def preview_scope_id():
-    """社外の方として確認するとき、どの相手として見るか。"""
-    if preview_role() != "outside":
-        return None
-    return session.get(PREVIEW_SCOPE_KEY)
-
-
 def effective_role():
     """**いま何者として扱うか。**判定はすべてここを見る。
 
@@ -119,19 +113,16 @@ def is_owner() -> bool:
 
 
 def can_edit() -> bool:
-    """社外の方には書かせない。**OEM・顧問先は見るだけ。**"""
+    """書いてよいか。**役割が分からない人には書かせない。**"""
     return effective_role() in STAFF_ROLES
 
 
 def scope_query(query, model, user=None):
     """見てよい範囲に絞る。**画面に出すクエリは必ずここを通す。**
 
-    **顧問先ご本人には、自分の会社のことしか見せない。**
-    ここを通していない画面が1つでもあると、そこから他社の情報が漏れる。
-    だから土台の時点で全画面の呼び出し口を通してある。
-
-    自社の人（`STAFF_ROLES`）は全件。将来、担当分だけに絞るときも、
-    **ここに足すだけで全画面に効く。**
+    いまは店の人（`STAFF_ROLES`）は全件、それ以外には1件も返さない。
+    キャスト本人に見せるときは、**ここに足すだけで全画面に効く**
+    （担当ゲストだけに絞る）。だから土台の時点で全画面の呼び出し口を通してある。
     """
     u = user or current_user
     if not getattr(u, "is_authenticated", False):
@@ -141,25 +132,13 @@ def scope_query(query, model, user=None):
     # **確認モードは、いまログインしている本人にだけ効かせる。**
     # 別の人を指定して呼ばれたときまで効かせると、答えが入れ替わる
     mine = user is None or user is current_user
-    role = effective_role() if mine else getattr(u, "role", None)
+    role = effective_role() if mine else \
+        RETIRED_ROLES.get(getattr(u, "role", None), getattr(u, "role", None))
 
-    if role in OUTSIDE_ROLES:
-        if not feature_open("outside"):
-            # **まだ社外には出さない。**器だけ用意してある状態
-            return query.filter(False)
-        sid = (preview_scope_id() if mine else None) or \
-            getattr(u, "scope_partner_id", None)
-        if not sid:
-            # **紐づけ忘れ＝全部見える、を作らない**
-            return query.filter(False)
-        from .models import Partner                           # noqa: PLC0415
-        if model is Partner:
-            return query.filter(model.id == sid)
-        if hasattr(model, "partner_id"):
-            return query.filter(model.partner_id == sid)
-        return query.filter(False)
-
-    return query
+    if role in STAFF_ROLES:
+        return query
+    # **知らない役割に全件を見せない。**消した役割が残っていても漏れない
+    return query.filter(False)
 
 
 def feature_open(key: str) -> bool:
@@ -205,14 +184,14 @@ def same_secret(a: str, b: str) -> bool:
 
 # ---------------------------------------------------------------- 一覧表
 # **判定そのものから作る。**表を手で書くと、コードを直したときに
-# 表だけ古くなり、「表ではできないはずが、実際はできる」が起きる。
-# **判定そのものから作る。**表を手で書くと、コードを直したときに
 # 表だけ古くなり、「表ではできないはずが、実際はできる」が起きる
 CAPABILITY_ROWS = (
-    ("取引先の閲覧", "", False,
-     lambda r: "自分の分だけ" if r in OUTSIDE_ROLES else "全件"),
-    ("取引先の追加・編集", "", False,
+    ("ゲストの閲覧", "", False,
+     lambda r: "全件" if r in STAFF_ROLES else "×"),
+    ("ゲスト・ボトル・来店・担当の追加と編集", "", False,
      lambda r: "○" if r in STAFF_ROLES else "×"),
+    ("キャストの追加・編集", "", False,
+     lambda r: "○" if r in ("master", "owner") else "×"),
     ("利用者の招待・役割の変更", "", True,
      lambda r: "○" if r in ("master", "owner") else "×"),
     ("自社の情報・選択肢の管理", "", True,

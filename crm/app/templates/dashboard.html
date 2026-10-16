@@ -5,38 +5,73 @@
 <div class="card">
   <h2 style="margin-bottom:2px">ダッシュボード</h2>
   <div class="hint">
-    取引先 {{ total }}件。
-    <strong>ここは見本です。</strong>業務が決まったら、
-    朝いちばんに見たいものに置き換えてください。
+    ゲスト {{ "{:,}".format(total) }}件（一覧から下げたものは数えていません）。
+    {% if feature_open('guests') %}<a href="{{ url_for('main.guests') }}">ゲストの一覧へ</a>{% endif %}
   </div>
 </div>
 
-{# **汚れているものを消さず、「要確認」として出す**（土台 §4.1）。
-   制約で弾くと、実データが入らなくなる #}
 <div class="card">
-  <h3 style="margin-bottom:2px">要確認　{{ issues|length }}件</h3>
+  <h3 style="margin-bottom:2px">誕生日　{{ month }}月・{{ next_month }}月　{{ births|length }}件</h3>
   <div class="hint" style="margin-bottom:10px">
-    埋まっていない項目があるもの。<strong>消さずに、ここに出します。</strong>
+    誕生日の月が分かっているゲストだけです。<strong>年は分からないことが多い</strong>ので、年齢は年が分かるときだけ出します。
   </div>
-  {% if issues %}
-  <div class="tblwrap">
-  <table>
-    <thead><tr><th>取引先</th><th>足りないもの</th></tr></thead>
+  {% if births %}
+  <div class="tblwrap"><table>
+    <thead><tr><th>誕生日</th><th>ゲスト</th><th>担当</th></tr></thead>
     <tbody>
-    {% for p in issues %}
+    {% for x in births %}
       <tr>
-        <td><a href="{{ url_for('main.partner_detail', pid=p.id) }}">{{ p.name }}</a></td>
-        <td>{{ p.issues|join('／') }}</td>
+        <td>{{ x.birthday_text }}{% if x.age is not none %}（{{ x.age }}歳）{% endif %}</td>
+        <td>{% if feature_open('guests') %}<a href="{{ url_for('main.guest_detail', gid=x.id) }}">{{ x.label }}</a>{% else %}{{ x.label }}{% endif %}</td>
+        <td>{% for a in x.active_assignments %}{{ a.cast.name }}{{ '、' if not loop.last }}{% else %}
+          {{ '担当なし' if x.no_cast else '分からない' }}{% endfor %}</td>
       </tr>
     {% endfor %}
     </tbody>
-  </table>
+  </table></div>
+  {% else %}<div class="hint">この2か月に誕生日のゲストはいません（誕生日の記録があるゲストの中で）。</div>{% endif %}
+</div>
+
+<div class="card">
+  <h3 style="margin-bottom:2px">最近の来店　{{ visit_total }}件</h3>
+  <div class="hint" style="margin-bottom:10px">{{ since.strftime('%Y-%m-%d') }} 以降に記録された来店です{% if visit_total > visits|length %}（新しい{{ visits|length }}件を表示）{% endif %}。</div>
+  {% if visits %}
+  <div class="tblwrap"><table>
+    <thead><tr><th>来店日</th><th>ゲスト</th><th>メモ</th></tr></thead>
+    <tbody>
+    {% for v, x in visits %}
+      <tr><td>{{ v.visited_on.strftime('%Y-%m-%d') }}</td>
+        <td>{% if feature_open('guests') %}<a href="{{ url_for('main.guest_detail', gid=x.id) }}">{{ x.label }}</a>{% else %}{{ x.label }}{% endif %}</td>
+        <td>{{ v.note or '' }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}<div class="hint">この2週間の来店の記録はありません。</div>{% endif %}
+</div>
+
+{# **汚れているものを消さず、「要確認」として出す**（土台 §4.1）。
+   合計だけでなく**種類ごとの内訳**を出す。押すとその一覧に飛ぶ #}
+<div class="card">
+  <h3 style="margin-bottom:2px">要確認　{{ "{:,}".format(issue_total) }}件</h3>
+  <div class="hint" style="margin-bottom:10px">
+    埋まっていない・食い違っている項目があるゲストです。<strong>消さずに、ここに出します。</strong>
+    1件のゲストが複数の種類に当たることがあります。
   </div>
+  {% if issue_count %}
+  <div class="tblwrap"><table>
+    <thead><tr><th>種類</th><th class="num">件数</th></tr></thead>
+    <tbody>
+    {% for kind, n in issue_count %}
+      <tr><td>{% if feature_open('guests') %}<a href="{{ url_for('main.guests', issue=kind) }}">{{ kind }}</a>{% else %}{{ kind }}{% endif %}</td>
+        <td class="num">{{ "{:,}".format(n) }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
   {% else %}<div class="hint">ありません。</div>{% endif %}
 </div>
 
-{# **当社の作業まで並ぶので、先方の画面には出さない。**
-   本題が見えなくなる。個別の履歴は、その相手の画面に出ている #}
+{# **当社の作業まで並ぶので、店の画面には出さない。**
+   本題が見えなくなる。個別の履歴は、そのゲストの画面に出ている #}
 {% if is_master() %}
 <div class="card">
   <h3>最近の変更</h3>
@@ -46,8 +81,8 @@
     <tbody>
     {% for h in recent %}
       <tr><td>{{ h.created_at|jst }}</td><td>{{ h.entity_type }}</td>
-        <td>{{ h.field }}</td><td>{{ h.old_value or '—' }}</td>
-        <td>{{ h.new_value or '—' }}</td>
+        <td>{{ h.field }}</td><td>{{ h.old_value or '（空）' }}</td>
+        <td>{{ h.new_value or '（空）' }}</td>
         <td>{{ h.user.name if h.user else '' }}</td></tr>
     {% else %}<tr><td colspan="6" class="hint">まだありません。</td></tr>
     {% endfor %}

@@ -12,7 +12,7 @@ from ..timeutil import utcnow
 from ..extensions import db
 from ..models import (CHOICE_GROUPS, FEATURE_LABEL, FEATURES, ApiKey,
                       ChangeHistory, Choice, Credential, Feature, OrgProfile,
-                      Partner, User)
+                      User)
 from ..security import (ROLES, STAFF_ROLES, capability_matrix,
                         feature_required, is_master, role_required,
                         visible_roles)
@@ -35,9 +35,6 @@ def index():
         roles=[r for r in ROLES if r != "master"],   # マスターは画面から選ばせない
         staff_roles=STAFF_ROLES,
         orgs=OrgProfile.all_companies(),
-        # 社外の方を紐づける先。**見本では取引先**
-        partners=Partner.query.filter(Partner.archived_at.is_(None))
-        .order_by(Partner.name).all(),
         matrix=capability_matrix(visible_roles()),
         matrix_roles=visible_roles())
 
@@ -59,22 +56,15 @@ def user_new():
         flash("そのメールアドレスは既にあります。")
         return redirect(url_for("admin.index"))
 
-    # **社外の方は、どこに属するかを必ず選ばせる。**
-    # 紐づけ忘れのまま作ると「役割は社外なのに、どこにも属さない人」ができる
-    sid = (request.form.get("scope_id") or "").strip()
-    scope_id = int(sid) if role == "outside" and sid.isdigit() else None
-    if role == "outside" and scope_id is None:
-        flash("社外の方を招待するときは、どちらの方かを選んでください。")
-        return redirect(url_for("admin.index"))
+    # **マスターは画面から作らせない。**選択肢に出していなくても、
+    # フォームを書き換えて送れば作れてしまう
+    if role == "master" and not is_master():
+        role = "staff"
 
-    u = User(email=email, name=name, role=role, scope_partner_id=scope_id)
+    u = User(email=email, name=name, role=role)
     db.session.add(u)
     db.session.flush()
-    where = ""
-    if scope_id:
-        p = db.session.get(Partner, scope_id)
-        where = f"／{p.name}" if p else ""
-    ChangeHistory.record("user", u.id, "追加", "", f"{name}／{role}{where}",
+    ChangeHistory.record("user", u.id, "追加", "", f"{name}／{role}",
                          current_user.id)
     db.session.commit()
     url = invite_and_mail(u)
@@ -129,10 +119,9 @@ def user_update(uid):
                   "次のログインから新しいほうをお使いいただきます。")
     elif act == "role":
         role = request.form.get("role")
-        if role == "outside":
-            # **社外に変えるときは紐づけが要る。**画面から個別に行う
-            flash("社外の方への変更は、招待し直してください。")
-            return redirect(url_for("admin.index"))
+        # **マスターへは画面から上げさせない**（招待と同じ）
+        if role == "master" and not is_master():
+            abort(403)
         if role in ROLES:
             if u.role == "owner" and role != "owner" and _active_owners() <= 1:
                 flash("管理者が1人になるため、この操作はできません。")

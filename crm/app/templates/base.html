@@ -15,7 +15,7 @@
 {# **いま先方の見え方で見ている**ことを、常に画面に出す。
    出しておかないと「隠したつもりが見えていた」に気づけない #}
 <div class="previewbar">
-  <span><b>{{ ROLE_LABEL.get(preview_role(), preview_role()) }}</b>の見え方で表示しています{% if preview_scope() %}（{{ preview_scope().name }}）{% endif %}</span>
+  <span><b>{{ ROLE_LABEL.get(preview_role(), preview_role()) }}</b>の見え方で表示しています</span>
   <a class="btn" href="{{ url_for('auth.preview', onoff='off') }}">マスターに戻る</a>
 </div>
 {% endif %}
@@ -23,17 +23,20 @@
 <div class="wrap{{ ' previewing' if previewing() }}">
   <nav class="side">
     <a class="brand" href="{{ url_for('main.dashboard') }}">
-      <img src="{{ url_for('static', filename='logo-light.png') }}?v={{ STATIC_V }}"
-           alt="{{ ORG_NAME }}">
+      <span class="brandtext">{{ ORG_NAME }}</span>
     </a>
 
     <div class="nav">
       <div class="sec">メイン</div>
       <a class="item {{ 'active' if request.endpoint=='main.dashboard' }}"
          href="{{ url_for('main.dashboard') }}">ダッシュボード</a>
-      {% if feature_open('partners') %}
-      <a class="item {{ 'active' if request.endpoint and request.endpoint.startswith('main.partner') }}"
-         href="{{ url_for('main.partners') }}">取引先</a>
+      {% if feature_open('guests') %}
+      <a class="item {{ 'active' if request.endpoint and request.endpoint.startswith('main.guest') }}"
+         href="{{ url_for('main.guests') }}">ゲスト</a>
+      {% endif %}
+      {% if feature_open('casts') %}
+      <a class="item {{ 'active' if request.endpoint and request.endpoint.startswith('main.cast') }}"
+         href="{{ url_for('main.casts') }}">キャスト</a>
       {% endif %}
       {% if is_owner() %}
       <div class="sec">管理</div>

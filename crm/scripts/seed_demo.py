@@ -3,29 +3,36 @@
     python scripts/seed_demo.py            # 何が入るか
     python scripts/seed_demo.py --apply
 
-画面の見え方を確かめるためのものです。**架空の会社**だけを入れます。
-実データを入れる前に、必ず空回しで件数を確かめてください（§6-7）。
+画面の見え方を確かめるためのものです。**架空のゲスト・キャスト**だけを入れます。
+実データ（Notion の書き出し）を入れる前に、必ず空回しで件数を確かめてください。
 """
 import argparse
 import sys
+from datetime import date, timedelta
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app import create_app                    # noqa: E402
-from app.extensions import db                 # noqa: E402
-from app.models import Partner                # noqa: E402
+from app import create_app                                    # noqa: E402
+from app.extensions import db                                 # noqa: E402
+from app.models import Assignment, Bottle, Cast, Corp, Guest, Visit  # noqa: E402
+
+# 番号, 名前
+CASTS = [(1, "見本あい"), (2, "見本かな"), (None, "見本さき")]
 
 # **わざと汚しておく。**きれいなデータしか入っていないと、
 # 「要確認」の仕組みが効いているか確かめられない
-#   名前, 区分, 担当者, 電話, 整理番号
-# **わざと欠けさせてある。**「要確認」が効くことを、入れた直後に確かめられる
-ROWS = [
-    ("見本商事株式会社",     "仕入先", "見本 太郎", "03-0000-0001", "P-001"),
-    ("架空工業株式会社",     "得意先", "架空 花子", "",            "P-002"),
-    ("試作サービス合同会社",  "",      "",         "03-0000-0003", ""),
-    ("仮称デザイン事務所",    "外注",   "仮名 次郎", "",            ""),
-    ("例示ホールディングス",  "",      "",         "",            "P-002"),
+#   番号, 名前, フリガナ, 法人, 担当（キャスト番号の位置, レベル）, ボトル, 誕生月日, 何日前に来店
+GUESTS = [
+    (9001, "架空 一郎", "カクウ イチロウ", "見本商事株式会社", (0, "メイン"),
+     ["マッカラン⑩P"], (date.today().month, 3), [2, 30]),
+    (9002, "仮名 二郎", "カメイ ジロウ", "見本商事株式会社", (1, "A1"),
+     ["知多⑯P", "吉四六P27"], None, [10]),
+    (9002, "試作 三郎", "シサク サブロウ", "", None,              # 番号の重複
+     [], (1, None), []),                                        # 日が分からない
+    (None, "例示 四郎", "", "架空工業㈱", (2, None),              # 番号なし
+     ["現物裏2段目シーバス"], None, []),
+    (9005, "", "", "", None, [], None, []),                      # 名前なし・担当が分からない
 ]
 
 
@@ -35,21 +42,34 @@ def main():
     a = ap.parse_args()
     app = create_app()
     with app.app_context():
-        have = {p.name for p in Partner.query.all()}
-        add = [r for r in ROWS if r[0] not in have]
-        for name, kind, contact, tel, code in add:
-            print("  入れる: %s" % name)
-            if a.apply:
-                # **整理番号は重複も未採番も許す。**実データがそうなっている
-                db.session.add(Partner(name=name, kind=kind or None,
-                                       contact_name=contact or None,
-                                       tel=tel or None, code=code or None))
-        if a.apply:
-            db.session.commit()
-            print("入れました: %d件" % len(add))
-        else:
+        if Guest.query.filter(Guest.guest_no.between(9001, 9005)).count():
+            print("見本は既に入っています。")
+            return 0
+        print(f"  入れる: キャスト {len(CASTS)}人・ゲスト {len(GUESTS)}件（すべて架空）")
+        if not a.apply:
             print("-" * 60)
             print("空回しです。入れるには --apply を付けてください。")
+            return 0
+        casts = [Cast(cast_no=no, name=name) for no, name in CASTS]
+        db.session.add_all(casts)
+        corps = {}
+        for no, name, kana, corp, who, bottles, birth, visits in GUESTS:
+            x = Guest(guest_no=no, name=name or None, kana=kana or None)
+            if corp:
+                x.corp = corps.setdefault(corp, Corp(name=corp))
+            if who:
+                db.session.add(Assignment(guest=x, cast=casts[who[0]],
+                                          level=who[1]))
+            for b in bottles:
+                db.session.add(Bottle(guest=x, label=b))
+            if birth:
+                x.birth_month, x.birth_day = birth
+            for d in visits:
+                db.session.add(Visit(guest=x,
+                                     visited_on=date.today() - timedelta(days=d)))
+            db.session.add(x)
+        db.session.commit()
+        print("入れました。")
     return 0
 
 

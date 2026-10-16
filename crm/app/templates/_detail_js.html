@@ -3,7 +3,7 @@
    ボタンを押させない。ただし「押した瞬間に保存される」ことを画面に書く。 #}
 var CSRF = (document.querySelector('meta[name=csrf-token]') || {}).content || '';
 
-function patch(field, value, done) {
+function patch(field, value, done, fail) {
   fetch(PATCH_URL, {
     method: 'PATCH',
     headers: {'Content-Type': 'application/json', 'X-CSRFToken': CSRF},
@@ -11,10 +11,14 @@ function patch(field, value, done) {
   }).then(function (r) { return r.json().then(function (d) {
     return {ok: r.ok, d: d};
   }); }).then(function (res) {
-    if (!res.ok || !res.d.ok) { toast(res.d.message || '保存できませんでした'); return; }
+    if (!res.ok || !res.d.ok) {
+      toast(res.d.message || '保存できませんでした');
+      if (fail) fail();
+      return;
+    }
     toast('保存しました');
     if (done) done(res.d.value);
-  }).catch(function () { toast('通信できませんでした'); });
+  }).catch(function () { toast('通信できませんでした'); if (fail) fail(); });
 }
 
 /* 文字の項目。押すと入力欄になり、離れると保存する */
@@ -28,14 +32,20 @@ document.querySelectorAll('.ed[data-field]').forEach(function (el) {
     el.textContent = '';
     el.appendChild(i);
     i.focus();
+    /* 空のときの書き方は項目ごとに違う（「未記録」「分からない」など）。
+       **空欄に「—」とだけ出さない**（規約 §12） */
+    var empty = el.dataset.empty || '—';
     var finish = function () {
       var now = i.value.trim();
-      el.textContent = now || '—';
+      el.textContent = now || empty;
       if (now === was) return;
       patch(el.dataset.field, now, function (v) {
         el.dataset.value = v;
-        el.textContent = v || '—';
+        el.textContent = v || empty;
         el.classList.add('changed');
+      }, function () {
+        /* **保存できなかった値を、保存したように見せない** */
+        el.textContent = was || empty;
       });
     };
     i.addEventListener('blur', finish);

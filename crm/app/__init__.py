@@ -97,16 +97,7 @@ def create_app(config_object=Config) -> Flask:
         """
         from .security import (ROLE_LABEL, can_edit, effective_role,
                                feature_open, is_master, is_owner,
-                               preview_role, preview_scope_id, previewing,
-                               real_is_master)
-
-        def preview_scope():
-            """確認中の相手。**名前を帯に出すため。**どこを見ているか分かる"""
-            sid = preview_scope_id()
-            if not sid:
-                return None
-            from .models import Partner                      # noqa: PLC0415
-            return db.session.get(Partner, sid)
+                               preview_role, previewing, real_is_master)
         name = app.config["ORG_NAME"]
         try:
             from .models import OrgProfile
@@ -128,7 +119,6 @@ def create_app(config_object=Config) -> Flask:
         return {"ORG_NAME": name, "ORG_ISSUES": issues, "is_owner": is_owner, "is_master": is_master,
                 "feature_open": feature_open, "previewing": previewing,
                 "real_is_master": real_is_master, "preview_role": preview_role,
-                "preview_scope": preview_scope,
                 "effective_role": effective_role,
                 "can_edit": can_edit, "ROLE_LABEL": ROLE_LABEL,
                 "STATIC_V": _static_version(app)}

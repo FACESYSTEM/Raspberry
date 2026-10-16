@@ -1,14 +1,16 @@
 """テーブル定義。**編集者を1人に決めること**（規約 §2）。
 
-土台に必要なものだけを置いている。ドメインのモデルは `Partner` を見本として
-1つだけ入れてあるので、**業務に合わせて作り直す**（消してよい）。
+前半は土台（利用者・履歴・自社の情報など）、後半が業務（ゲスト・キャスト・
+ボトル・来店）。言葉は規約 §7 の辞書に合わせる。
 
-現実のデータには未採番・未紐付け・重複が**実在する**。
-**一意制約を安易に付けない。NULL可を恐れない。**汚れているものは消さず、
-「要確認」として一覧に出す（`Partner.issues`）。
+現実のデータには未採番・未紐付け・重複が**実在する**（Notion の書き出しで
+ゲスト番号の空2件・重複1組を確認した）。**一意制約を安易に付けない。NULL可を
+恐れない。**汚れているものは消さず、「要確認」として一覧に出す（`Guest.issues`）。
 """
 from datetime import date, timedelta
 import secrets
+
+from flask import g, has_request_context
 
 from flask_login import UserMixin
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -31,13 +33,6 @@ class User(db.Model, UserMixin):
     # **パスワードはハッシュのみ。**平文を持たない・ログに出さない
     password_hash = db.Column(db.String(255))
     role = db.Column(db.String(20), nullable=False, default="staff")
-    # **社外の方のとき、どの相手に属するか。**自社の人は空。
-    # 役割が `outside` なのにここが空だと、1件も見せない（`scope_query`）。
-    # **紐づけ忘れ＝全部見える、を作らない。**
-    # 見本では取引先に繋いでいる。業務が決まったら、その実体に繋ぎ替える
-    scope_partner_id = db.Column(db.Integer, db.ForeignKey("partners.id"),
-                                 index=True)
-    scope = db.relationship("Partner", foreign_keys=[scope_partner_id])
     is_active_user = db.Column(db.Boolean, nullable=False, default=True)
 
     # 招待・再設定。**使い捨て**にして、使ったら消す
@@ -71,11 +66,6 @@ class User(db.Model, UserMixin):
     def invite_alive(self) -> bool:
         return bool(self.invite_token and self.invite_expires_at
                     and self.invite_expires_at > utcnow())
-
-    @property
-    def is_outside(self) -> bool:
-        """顧問先ご本人か。**自社の人と混ぜない。**"""
-        return self.role == "outside"
 
     # Flask-Login。**無効にした利用者は入れない**
     @property
@@ -120,7 +110,7 @@ class Comment(db.Model):
     """対応履歴。どの実体にも付けられるようにしておく。
 
     **画面への指摘は別のもの**（`packages/fixmode`）。
-    同じ表に混ぜると、顧問先の対応履歴に開発の話が並ぶ。
+    同じ表に混ぜると、ゲストの対応履歴に開発の話が並ぶ。
     """
     __tablename__ = "comments"
 
@@ -134,7 +124,6 @@ class Comment(db.Model):
     author = db.relationship("User")
 
 
-# 継続か過去か。**列で持たず、契約から導く**（`Client.phase`）
 # 自社の法人。**1つから始める。**
 # 請求の計上先が分かれている会社では、ここに足して使い分ける
 # （実案件では、請求書の保管フォルダが2法人に分かれていた）。
@@ -288,12 +277,12 @@ class Credential(db.Model):
 # **公開／非公開は最初から持つ。**作りかけを先方に見せない。
 # 足すときは、ここに1行足して画面から切り替える
 FEATURES = [
-    ("partners",    "取引先",         True),     # 見本のドメイン
+    ("guests",      "ゲスト",         True),
+    ("casts",       "キャスト",        True),
     ("org",         "利用者・組織",     True),
     ("choices",     "選択肢",         True),
     ("apikeys",     "外部連携の鍵",     False),
     ("credentials", "ログイン情報",     False),
-    ("outside",     "社外の方の画面",    False),
 ]
 FEATURE_LABEL = {k: label for k, label, _ in FEATURES}
 
@@ -338,7 +327,7 @@ class Feature(db.Model):
 
 
 class Choice(db.Model):
-    """選択肢のマスタ。**主担当・顧問種別のように、増えるが決まっているもの。**
+    """選択肢のマスタ。**担当レベルのように、増えるが決まっているもの。**
 
     自由入力にすると表記がぶれる（実データでは同じ先が3通りに書かれていた）。
     かといってコードに埋めると、人が増えたときに開発を待つことになる。
@@ -350,7 +339,7 @@ class Choice(db.Model):
     __tablename__ = "choices"
 
     id = db.Column(db.Integer, primary_key=True)
-    group = db.Column(db.String(30), nullable=False, index=True)  # owner / service_kind
+    group = db.Column(db.String(30), nullable=False, index=True)  # level
     label = db.Column(db.String(80), nullable=False)
     sort_order = db.Column(db.Integer, default=100)
     archived_at = db.Column(db.DateTime)
@@ -373,45 +362,254 @@ class Choice(db.Model):
 
 
 # ---------------------------------------------------------------------------
-# 以下はひな形の見本。**作法を見せるためだけに残している**（消してよい）
+# 業務。言葉は規約 §7 の辞書どおり
 # ---------------------------------------------------------------------------
 
-# 選択肢の分類。**業務が決まったら、ここを業務の言葉で埋める。**
-# 自由入力にすると表記が必ずぶれる（実案件では同じ相手が3通りに書かれていた）
-CHOICE_GROUPS = {"owner": "主担当"}
+# 選択肢の分類。**自由入力にすると表記がぶれるものだけ**をここで持つ
+CHOICE_GROUPS = {"level": "担当レベル"}
 
 
-class Partner(db.Model):
-    """取引先。**一覧・詳細・インライン編集・要確認の作法を見せるための見本。**
+def guest_label(no, name) -> str:
+    """画面に出すゲストの名前。**番号と名前から毎回作る**（規約 §7.6）。
 
-    現実のデータに合わせて、**緩く持つ**。
-
-      * `code` に一意制約を付けない（重複が実在することがある）
-      * `code` は NULL可（未採番が実在する）
-      * 消さずに `archived_at` で下げる（履歴と集計に要る）
+    Notion ではタイトル列に `【Gu_1592】〇〇` と書いて持っていたが、
+    番号や名前を直してもタイトルだけ古いまま残っていた。持たずに導く。
     """
-    __tablename__ = "partners"
+    head = f"Gu_{no}" if no is not None else "Gu_（番号なし）"
+    return f"{head} {name}" if name else head
+
+
+class Corp(db.Model):
+    """法人・団体。ゲストの勤め先・所属。
+
+    **名前に一意制約を付けない。**`㈱〇〇` と `株式会社〇〇` のような
+    表記ゆれが実在し、同じ会社かどうかは人が見て決めることだから。
+    """
+    __tablename__ = "corps"
 
     id = db.Column(db.Integer, primary_key=True)
-    code = db.Column(db.String(30), index=True)       # 未採番=NULL可・重複可
-    name = db.Column(db.String(200), nullable=False)
-    kind = db.Column(db.String(20))                   # 区分（見本）
-    contact_name = db.Column(db.String(120))
-    contact_email = db.Column(db.String(255))
-    tel = db.Column(db.String(50))
-    address = db.Column(db.String(300))
+    name = db.Column(db.String(200), nullable=False, index=True)
+    kana = db.Column(db.String(200))
+    archived_at = db.Column(db.DateTime)
+    created_at = db.Column(db.DateTime, default=utcnow)
+
+
+class Cast(db.Model):
+    """キャスト。
+
+    `cast_no` は Notion の `CA_25_〇〇` の 25。**番号の無いキャストが実在する**
+    （`CA_Noなし_〇〇`）ので NULL可・一意にしない。
+    辞めたキャストも**消さずに下げる**（`archived_at`）。担当の履歴が読めなくなるため。
+    """
+    __tablename__ = "casts"
+
+    id = db.Column(db.Integer, primary_key=True)
+    cast_no = db.Column(db.Integer, index=True)
+    name = db.Column(db.String(80), nullable=False)
     note = db.Column(db.Text)
     archived_at = db.Column(db.DateTime)
     created_at = db.Column(db.DateTime, default=utcnow)
-    updated_at = db.Column(db.DateTime, default=utcnow,
-                           onupdate=utcnow)
+
+    @property
+    def label(self) -> str:
+        """`CA_25_〇〇`。番号が無ければ `CA_Noなし_〇〇`（Notion と同じ書き方）。"""
+        no = self.cast_no if self.cast_no is not None else "Noなし"
+        return f"CA_{no}_{self.name}"
+
+    @property
+    def active_assignments(self) -> list:
+        """いま担当しているもの。**数は持たずにここから導く**（規約 §7.6）。"""
+        return [a for a in self.assignments
+                if a.ended_at is None and a.guest and not a.guest.archived_at]
+
+    @property
+    def issues(self) -> list:
+        return [] if self.cast_no is not None else ["キャスト番号なし"]
+
+
+class Guest(db.Model):
+    """ゲスト。**Notion の1行がこれ1件。**
+
+    Notion では1行にボトル・担当・来店まで詰めていたが、ここでは分ける
+    （`Bottle`・`Assignment`・`Visit`）。最終来店日・来店回数・いまの担当は
+    **列で持たず、そこから導く。**両方持つと片方だけ古くなる。
+    """
+    __tablename__ = "guests"
+
+    id = db.Column(db.Integer, primary_key=True)
+    # **未採番=NULL可・重複可。**実データにどちらもある（規約 §7.1）
+    guest_no = db.Column(db.Integer, index=True)
+    # 名前が分からないゲストも実在する（Notion で18件）。**空でも登録できる**
+    name = db.Column(db.String(120))
+    kana = db.Column(db.String(120))
+    corp_id = db.Column(db.Integer, db.ForeignKey("corps.id"), index=True)
+    title = db.Column(db.String(120))
+    neck_name = db.Column(db.String(120))
+    # **年は分からないことが多い**（規約 §7.2）。分からなければ空のまま
+    birth_year = db.Column(db.Integer)
+    birth_month = db.Column(db.Integer)
+    birth_day = db.Column(db.Integer)
+    tel = db.Column(db.String(50))
+    email = db.Column(db.String(255))
+    address = db.Column(db.String(300))
+    note = db.Column(db.Text)
+    registered_on = db.Column(db.Date)
+    # **担当なしを確かめたか。**空の担当を「担当なし」と読まないため（規約 §7.3）
+    no_cast = db.Column(db.Boolean, nullable=False, default=False)
+    archived_at = db.Column(db.DateTime)
+    created_at = db.Column(db.DateTime, default=utcnow)
+    updated_at = db.Column(db.DateTime, default=utcnow, onupdate=utcnow)
+
+    corp = db.relationship("Corp", backref="guests")
+
+    @property
+    def label(self) -> str:
+        return guest_label(self.guest_no, self.name)
+
+    # ---- 導くもの（規約 §7.6）----
+    @property
+    def live_visits(self) -> list:
+        return sorted((v for v in self.visits if v.archived_at is None),
+                      key=lambda v: v.visited_on, reverse=True)
+
+    @property
+    def last_visit_on(self):
+        """最終来店日。**記録が無ければ None**（来ていない、ではない）。"""
+        got = self.live_visits
+        return got[0].visited_on if got else None
+
+    @property
+    def visit_count(self) -> int:
+        return len(self.live_visits)
+
+    @property
+    def active_assignments(self) -> list:
+        return [a for a in self.assignments if a.ended_at is None]
+
+    @property
+    def cast_state(self) -> str:
+        """担当の状態。`has`（いる）・`none`（いないと確かめた）・`unknown`。"""
+        if self.active_assignments:
+            return "has"
+        return "none" if self.no_cast else "unknown"
+
+    @property
+    def keeping_bottles(self) -> list:
+        return [b for b in self.bottles if b.finished_at is None]
+
+    @property
+    def birthday_text(self) -> str:
+        """誕生日の表示。**分からない部分は書かない**（年を今年で埋めない）。"""
+        if not self.birth_month:
+            return ""
+        md = f"{self.birth_month}月{self.birth_day}日" if self.birth_day \
+            else f"{self.birth_month}月（日は分からない）"
+        return f"{self.birth_year}年{md}" if self.birth_year else md
+
+    @property
+    def age(self):
+        """年齢。**年が分からなければ出さない。**"""
+        if not (self.birth_year and self.birth_month and self.birth_day):
+            return None
+        t = date.today()
+        return t.year - self.birth_year - (
+            (t.month, t.day) < (self.birth_month, self.birth_day))
 
     @property
     def issues(self) -> list:
         """要確認。**消さずに見せる。**正しさは制約ではなく検出で担保する。"""
         got = []
-        if not self.code:
-            got.append("未採番")
-        if not self.contact_email:
-            got.append("連絡先メールなし")
+        if self.guest_no is None:
+            got.append("番号なし")
+        elif self.guest_no in duplicate_guest_nos():
+            got.append("番号が重複")
+        if not self.name and not self.kana:
+            got.append("名前なし")
+        if self.cast_state == "unknown":
+            got.append("担当が分からない")
+        if self.birth_month and not self.birth_day:
+            got.append("誕生日の日が分からない")
         return got
+
+
+def duplicate_guest_nos() -> set:
+    """重複しているゲスト番号。**1回の表示につき1回だけ数える。**
+
+    ゲストごとに数えると、2,000件の一覧で2,000回問い合わせることになる。
+    """
+    if has_request_context() and "_dup_guest_nos" in g:
+        return g._dup_guest_nos
+    rows = (db.session.query(Guest.guest_no)
+            .filter(Guest.guest_no.isnot(None), Guest.archived_at.is_(None))
+            .group_by(Guest.guest_no)
+            .having(db.func.count(Guest.id) > 1).all())
+    got = {r[0] for r in rows}
+    if has_request_context():
+        g._dup_guest_nos = got
+    return got
+
+
+class Assignment(db.Model):
+    """担当。ゲストとキャストの結び付き。**1人のゲストに複数ありうる。**
+
+    外れたら消さずに `ended_at` を入れる。誰がいつまで担当していたかが
+    読めなくなると、引き継ぎで困る。
+    """
+    __tablename__ = "assignments"
+
+    id = db.Column(db.Integer, primary_key=True)
+    guest_id = db.Column(db.Integer, db.ForeignKey("guests.id"),
+                         nullable=False, index=True)
+    cast_id = db.Column(db.Integer, db.ForeignKey("casts.id"),
+                        nullable=False, index=True)
+    # 選択肢（`level`）。**既定値を置かない**（未選択は未選択として出す）
+    level = db.Column(db.String(30))
+    # `（A）`・`（C）` など。意味が決まるまで書かれたまま持つ（規約 §7.3）
+    mark = db.Column(db.String(30))
+    ended_at = db.Column(db.DateTime)
+    created_at = db.Column(db.DateTime, default=utcnow)
+
+    guest = db.relationship("Guest", backref="assignments")
+    cast = db.relationship("Cast", backref="assignments")
+
+
+class Bottle(db.Model):
+    """キープボトル。**1本＝1行。**
+
+    Notion では `知多⑯P マッカラン⑩P` のように1つの欄に何本も書いていた。
+    `label` には**書かれたとおり**を残し、銘柄・番号・置き場所は分かる分だけ持つ。
+    読み違いがあっても元に戻れるようにするため。
+    """
+    __tablename__ = "bottles"
+
+    id = db.Column(db.Integer, primary_key=True)
+    guest_id = db.Column(db.Integer, db.ForeignKey("guests.id"),
+                         nullable=False, index=True)
+    label = db.Column(db.String(200), nullable=False)
+    brand = db.Column(db.String(80))
+    keep_no = db.Column(db.Integer)
+    place = db.Column(db.String(120))
+    # 飲み切り。**消さずに下げる**
+    finished_at = db.Column(db.DateTime)
+    created_at = db.Column(db.DateTime, default=utcnow)
+
+    guest = db.relationship("Guest", backref="bottles")
+
+
+class Visit(db.Model):
+    """来店。**1回＝1行。**最終来店日・来店回数はここから導く。
+
+    打ち間違いは消さずに `archived_at` で取り消す。
+    """
+    __tablename__ = "visits"
+
+    id = db.Column(db.Integer, primary_key=True)
+    guest_id = db.Column(db.Integer, db.ForeignKey("guests.id"),
+                         nullable=False, index=True)
+    visited_on = db.Column(db.Date, nullable=False, index=True)
+    note = db.Column(db.String(300))
+    archived_at = db.Column(db.DateTime)
+    created_by_id = db.Column(db.Integer, db.ForeignKey("users.id"))
+    created_at = db.Column(db.DateTime, default=utcnow)
+
+    guest = db.relationship("Guest", backref="visits")

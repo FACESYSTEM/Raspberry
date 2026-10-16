@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}{{ c.label }}{% endblock %}
+{% macro ed(field, value, label, empty='未記録') %}
+  <div class="field"><label>{{ label }}</label>
+    {% if is_owner() %}
+      <span class="ed" data-field="{{ field }}" data-value="{{ '' if value is none else value }}"
+            data-empty="{{ empty }}" title="押すと直せます">{{ empty if value is none or value == '' else value }}</span>
+    {% else %}<span>{{ empty if value is none or value == '' else value }}</span>{% endif %}
+  </div>
+{% endmacro %}
+{% block content %}
+<div class="card">
+  <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
+    <h2 style="margin:0">{{ c.label }}</h2>
+    {% for i in c.issues %}<span class="badge warn">{{ i }}</span>{% endfor %}
+    {% if c.archived_at %}<span class="badge">在籍から外しています</span>{% endif %}
+    <a class="btn" style="margin-left:auto" href="{{ url_for('main.casts') }}">一覧へ</a>
+  </div>
+  <p class="hint" style="margin:8px 0 0">
+    {% if is_owner() %}<b>点線の項目は押すと直せます。</b>直した時点で保存されます（ボタンはありません）。
+    {% else %}キャストを直せるのは管理者です。{% endif %}</p>
+</div>
+
+<div class="card">
+  {{ ed('cast_no', c.cast_no, 'キャスト番号', '番号なし') }}
+  {{ ed('name', c.name, '名前') }}
+  {{ ed('note', c.note, 'メモ', 'なし') }}
+</div>
+
+<div class="card">
+  <h3 style="margin-top:0">担当しているゲスト　{{ rows|length }}人</h3>
+  <div class="tblwrap"><table>
+    <thead><tr><th>ゲスト</th><th>担当レベル</th><th>付記</th><th>最終来店</th></tr></thead>
+    <tbody>
+    {% for a in rows %}
+      <tr><td>{% if feature_open('guests') %}<a href="{{ url_for('main.guest_detail', gid=a.guest.id) }}">{{ a.guest.label }}</a>{% else %}{{ a.guest.label }}{% endif %}</td>
+        <td>{{ a.level or '未選択' }}</td><td>{{ a.mark or '' }}</td>
+        <td>{{ a.guest.last_visit_on.strftime('%Y-%m-%d') if a.guest.last_visit_on else '' }}</td></tr>
+    {% else %}<tr><td colspan="4" class="hint">いま担当しているゲストはいません。</td></tr>{% endfor %}
+    </tbody>
+  </table></div>
+</div>
+
+{% if is_owner() %}
+<div class="card">
+  <form method="post" action="{{ url_for('main.cast_archive', cid=c.id) }}"
+        onsubmit="return confirm('{{ '在籍に戻します。' if c.archived_at else '在籍から外します。担当の記録は残ります。' }}よろしいですか。')">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button class="btn" type="submit">{{ '在籍に戻す' if c.archived_at else '在籍から外す' }}</button>
+    <span class="hint">　消しません。担当の記録は残ります</span>
+  </form>
+</div>
+{% endif %}
+
+<div class="card">
+  <h3 style="margin-top:0">変更履歴</h3>
+  <div class="tblwrap"><table>
+    <thead><tr><th style="width:150px">いつ</th><th style="width:110px">だれ</th>
+      <th style="width:120px">項目</th><th>内容</th></tr></thead>
+    <tbody>
+    {% for h in history %}
+      <tr><td>{{ h.created_at|jst }}</td>
+        <td>{{ h.user.name if h.user else '—' }}</td>
+        <td>{{ h.field }}</td>
+        <td>{{ h.old_value or '（空）' }} → {{ h.new_value or '（空）' }}</td></tr>
+    {% else %}<tr><td colspan="4" class="hint">まだありません。</td></tr>{% endfor %}
+    </tbody>
+  </table></div>
+</div>
+{% endblock %}
+{% block script %}
+{% if is_owner() %}
+const PATCH_URL = "{{ url_for('main.cast_patch', cid=c.id) }}";
+{% include "_detail_js.html" %}
+{% endif %}
+{% endblock %}

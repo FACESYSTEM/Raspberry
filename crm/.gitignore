@@ -11,4 +11,7 @@ __pycache__/
 # シードデータには使わない。架空の名前で作る（§0.3）
 download/
 *.zip
+# Notion の書き出し（ゲストの個人情報）
+*.csv
+notion_dump/
 *.mp4

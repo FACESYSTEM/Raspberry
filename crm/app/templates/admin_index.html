@@ -8,7 +8,7 @@
     メールが出ない環境では、表示されるリンクを渡してください。</p>
   <div class="tblwrap"><table>
     <thead><tr><th>名前</th><th>メール</th><th style="width:130px">役割</th>
-      <th>所属</th><th style="width:90px">状態</th><th style="width:200px"></th></tr></thead>
+      <th style="width:90px">状態</th><th style="width:200px"></th></tr></thead>
     <tbody>
     {% for u in users %}
     <tr>
@@ -35,12 +35,6 @@
               {{ ROLE_LABEL.get(r, r) }}</option>{% endfor %}
           </select>
         </form>
-      </td>
-      <td>
-        {% if u.is_outside %}
-          {% if u.scope_partner_id %}<a href="{{ url_for('main.partner_detail', pid=u.scope_partner_id) }}">{{ u.scope.name if u.scope else '' }}</a>
-          {% else %}<span class="hint" style="color:var(--serious)">紐づけが未設定（何も見えません）</span>{% endif %}
-        {% else %}<span class="hint">自社</span>{% endif %}
       </td>
       <td>{% if u.is_active_user %}<span class="badge">有効</span>
           {% else %}<span class="badge warn">無効</span>{% endif %}</td>
@@ -72,19 +66,6 @@
           {% for r in roles %}<option value="{{ r }}">{{ ROLE_LABEL.get(r, r) }}</option>{% endfor %}
         </select></div>
     </div>
-    <div class="fld" id="invscope" style="grid-template-columns:110px 1fr;display:none">
-      <label>どちらの方</label>
-      <div>
-        <select name="scope_id">
-          <option value="">選んでください</option>
-          {% for p in partners %}<option value="{{ p.id }}">{{ p.name }}</option>{% endfor %}
-        </select>
-      </div>
-    </div>
-    <div class="hint" id="invoutside" style="display:none;margin-top:6px">
-      <b>いまは招待するだけで、ログインしても何も表示されません。</b>
-      何をお見せするかが決まってから、「機能の公開」でまとめて出します。
-    </div>
     <div class="bar" style="margin-top:12px">
       <button class="btn primary" type="submit">招待する</button>
       <span class="hint">招待リンクが表示されます。メールが出ない環境では、それを渡してください。</span>
@@ -97,8 +78,7 @@
 <div class="card" id="roles">
   <h2 style="margin-top:0">ロール別にできること</h2>
   <p class="hint">
-    上の「役割」を変えるときの目安です。<b>顧問先</b>は社外の方で、
-    <b>自社分のみ</b>＝その顧問先ご自身の会社のことだけが見え、他社は一覧にも出ません。</p>
+    上の「役割」を変えるときの目安です。この表は権限の判定そのものから作っています。</p>
   <div class="tblwrap"><table class="roletbl">
     <thead><tr><th>できること</th>
       {% for r in matrix_roles %}<th>{{ ROLE_LABEL[r] }}</th>{% endfor %}</tr></thead>
@@ -117,7 +97,7 @@
   </table></div>
   <ul class="hint" style="margin:10px 0 0;padding-left:1.2em">
     {% if is_master() %}
-    <li><b>マスターは当社（松本）だけ</b>です。作りかけの機能もここからだけ見えます。</li>
+    <li><b>マスターは当社（開発側）だけ</b>です。作りかけの機能もここからだけ見えます。</li>
     {% endif %}
     <li>非公開の機能は、URLを直に開いても<b>「ページがありません」</b>を返します。
       あることが分からないようにするためです。</li>
@@ -139,36 +119,11 @@
     <form method="post" action="{{ url_for('auth.preview', onoff=r) }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <input type="hidden" name="back" value="{{ url_for('main.dashboard') }}">
-      {% if r == 'outside' %}
-      <select name="scope_id" style="min-width:200px">
-        {% for p in partners %}<option value="{{ p.id }}">{{ p.name }}</option>{% endfor %}
-      </select>
-      {% endif %}
       <button class="btn" type="submit">{{ ROLE_LABEL[r] }}として表示</button>
     </form>
     {% endfor %}
   </div>
-  {% if not partners %}
-  <p class="hint" style="margin-bottom:0">取引先が1件もないため、社外の方としての確認はできません。</p>
-  {% endif %}
 </div>
 {% endif %}
 
-{% endblock %}
-{% block script %}
-/* 役割が「顧問先」のときだけ、どの顧問先かを聞く。
-   **紐づけ忘れると1件も見えない**ので、その場で選ばせる */
-(function () {
-  var role = document.getElementById('invrole');
-  var box = document.getElementById('invscope');
-  var note = document.getElementById('invoutside');
-  if (!role || !box) return;
-  function sync() {
-    var out = role.value === 'outside';
-    box.style.display = out ? 'grid' : 'none';
-    note.style.display = out ? 'block' : 'none';
-  }
-  role.addEventListener('change', sync);
-  sync();
-})();
 {% endblock %}

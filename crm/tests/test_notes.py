@@ -12,9 +12,9 @@ def _Note():
     return current_app.extensions["fixmode"].Note
 
 
-def _post(cl, body="主担当の欄で迷いました", page="/partners", quote="主担当"):
+def _post(cl, body="主担当の欄で迷いました", page="/guests", quote="主担当"):
     return cl.post("/notes", data={"body": body, "page": page,
-                                   "page_title": "顧問先", "quote": quote},
+                                   "page_title": "ゲスト", "quote": quote},
                    follow_redirects=True)
 
 
@@ -24,7 +24,7 @@ class Test書く:
         with app.app_context():
             n = _Note().query.one()
             assert n.quote == "主担当"
-            assert n.page == "/partners"
+            assert n.page == "/guests"
             assert n.body == "主担当の欄で迷いました"
 
     def test_空では送れない(self, as_owner, app):
@@ -38,13 +38,9 @@ class Test書く:
 
     def test_ほかの画面には出ない(self, as_owner):
         """**その画面のことだけ出す。**全部出すと、どこの話か分からない"""
-        _post(as_owner, page="/partners")
+        _post(as_owner, page="/guests")
         body = as_owner.get("/").get_data(as_text=True)      # 別の画面
         assert "主担当の欄で迷いました" not in body
-
-    def test_社外の方には出さない(self, as_outside):
-        body = as_outside.get("/partners").get_data(as_text=True)
-        assert 'id="modeswitch"' not in body
 
 
 class Test潰す:
@@ -57,7 +53,7 @@ class Test潰す:
         with app.app_context():
             nid = _Note().query.one().id
         as_owner.post(f"/notes/{nid}/accept")
-        body = as_owner.get("/partners").get_data(as_text=True)
+        body = as_owner.get("/guests").get_data(as_text=True)
         assert "主担当の欄で迷いました" not in body
 
     def test_直しただけでは消えない(self, as_master, app):
@@ -66,7 +62,7 @@ class Test潰す:
         with app.app_context():
             nid = _Note().query.one().id
         as_master.post(f"/notes/{nid}/fixed", data={"fixed_note": "外しました"})
-        assert "主担当の欄で迷いました" in as_master.get("/partners").get_data(as_text=True)
+        assert "主担当の欄で迷いました" in as_master.get("/guests").get_data(as_text=True)
 
     def test_消さずに残す(self, as_owner, app):
         """**何を言われて何をしたかを残す。**消すと辿れない"""
@@ -133,14 +129,14 @@ class Test直す人と確認する人:
 
 
 class Test対応履歴と混ざらない:
-    def test_顧問先の対応履歴に出ない(self, as_owner, app, db):
+    def test_ゲストの対応履歴に出ない(self, as_owner, app, db):
         """`entity_type` が違う。**画面へのひとことは対応履歴ではない**"""
-        from app.models import Partner
-        c = Partner(name="見本商事")
+        from app.models import Guest
+        c = Guest(name="見本商事")
         _db.session.add(c)
         _db.session.commit()
-        _post(as_owner, page=f"/partners/{c.id}")
-        body = as_owner.get(f"/partners/{c.id}").get_data(as_text=True)
+        _post(as_owner, page=f"/guests/{c.id}")
+        body = as_owner.get(f"/guests/{c.id}").get_data(as_text=True)
         assert body.count("主担当の欄で迷いました") == 1     # ひとことの欄だけ
 
 
@@ -148,7 +144,7 @@ class Test囲んだ場所:
     def test_四角ごと残る(self, as_owner, app):
         """**どこを囲んだかを残す。**場所が分からないと直しようがない"""
         as_owner.post("/notes", json={"body": "この2つは並べて見たい",
-                                      "page": "/partners", "page_title": "顧問先",
+                                      "page": "/guests", "page_title": "ゲスト",
                                       "quote": "未設定　期限が未記入",
                                       "rect": "0.3800,0.1000,0.1400,0.0700"})
         with app.app_context():
@@ -158,17 +154,17 @@ class Test囲んだ場所:
 
     def test_画面を飛ばさずに返す(self, as_owner):
         """**書いたものを失わせない。**やり直しになるのが一番こたえる"""
-        r = as_owner.post("/notes", json={"body": "見出しが小さい", "page": "/partners"})
+        r = as_owner.post("/notes", json={"body": "見出しが小さい", "page": "/guests"})
         assert r.status_code == 200 and r.get_json()["ok"] is True
 
     def test_空はそのまま返す(self, as_owner):
-        r = as_owner.post("/notes", json={"body": "  ", "page": "/partners"})
+        r = as_owner.post("/notes", json={"body": "  ", "page": "/guests"})
         assert r.status_code == 400 and r.get_json()["ok"] is False
 
     def test_描き戻せる形で渡す(self, as_owner):
-        as_owner.post("/notes", json={"body": "ここ", "page": "/partners",
+        as_owner.post("/notes", json={"body": "ここ", "page": "/guests",
                                       "rect": "0.1,0.1,0.2,0.2"})
-        body = as_owner.get("/partners").get_data(as_text=True)
+        body = as_owner.get("/guests").get_data(as_text=True)
         assert '"rect": "0.1,0.1,0.2,0.2"' in body
 
 
@@ -176,7 +172,7 @@ class Test最近の変更:
     """**当社の作業まで並ぶので、先方の画面には出さない。**
 
     「見え方の確認」「利用者の追加」まで混ざり、本題が見えなくなる。
-    顧問先ごとの履歴は、その顧問先の画面に出ている。
+    ゲストごとの履歴は、そのゲストの画面に出ている。
     """
 
     def test_管理者には出さない(self, as_owner):
@@ -189,15 +185,15 @@ class Test最近の変更:
         as_master.post("/preview/owner")
         assert "最近の変更" not in as_master.get("/").get_data(as_text=True)
 
-    def test_顧問先ごとの履歴は残す(self, as_owner, app):
+    def test_ゲストごとの履歴は残す(self, as_owner, app):
         """**全体の一覧を消しただけ。**個別の履歴まで消さない"""
-        from app.models import Partner
+        from app.models import Guest
         with app.app_context():
-            c = Partner(name="見本商事")
+            c = Guest(name="見本商事")
             _db.session.add(c)
             _db.session.commit()
             cid = c.id
-        assert "変更履歴" in as_owner.get(f"/partners/{cid}").get_data(as_text=True)
+        assert "変更履歴" in as_owner.get(f"/guests/{cid}").get_data(as_text=True)
 
 
 class Test辿りつけるか:

@@ -10,8 +10,8 @@
     画面の見出しや、これから作る請求書の発行元に使います。
     <strong>コードに埋めていません</strong>（別の組織へ土台を持っていけるように）。
     <br>
-    請求書の保管フォルダが「株式会社計上」「合同会社計上」に分かれているため、
-    <strong>2法人ぶん持てるようにしてあります。</strong>
+    法人が2つある場合に備えて<strong>2法人ぶん持てます。</strong>
+    使わないほうは「いまは使っていない」にしておくと、未記入の警告が出なくなります。
   </div>
 </div>
 
@@ -58,31 +58,17 @@
     </div>
     {% endif %}
 
-    {% if o.is_display %}
-    <h4>連絡が止まっている判定</h4>
-    <div class="fld" style="grid-template-columns:110px 1fr">
-      <label>既定の日数</label>
-      <div><input name="stale_days" value="{{ o.stale_days or '' }}" placeholder="60" style="width:90px">
-      <div class="hint">
-        最後に会話してからこの日数が過ぎた顧問先を「連絡が止まっている」として出します。
-        <strong>顧問先ごとに個別の日数も設定できます</strong>（顧問先の画面）。空欄なら60日。
-      </div></div>
-    </div>
-
-    <h4>契約更新の事前アラート</h4>
-    <div class="fld" style="grid-template-columns:110px 1fr">
-      <label>何日前から</label>
-      <div><input name="renew_notice_days" value="{{ o.renew_notice_days or '' }}"
-             placeholder="30" style="width:90px">
-      <div class="hint">
-        更新日までこの日数を切った顧問先を、ダッシュボードの
-        <strong>「まもなく契約更新」</strong>に出します。空欄なら30日。
-      </div></div>
-    </div>
-    {% endif %}
     <div class="fld" style="grid-template-columns:110px 1fr">
       <label>メモ</label><textarea name="note" rows="2">{{ o.note or '' }}</textarea>
     </div>
+    {% if not o.is_display %}
+    {# **使っていない法人の未記入を出し続けない。**消えない警告は読まれなくなる #}
+    <input type="hidden" name="_has_in_use" value="1">
+    <label class="hint" style="display:block;margin:10px 0">
+      <input type="checkbox" name="in_use" value="1" {{ 'checked' if o.in_use }} style="margin-right:6px">
+      この法人を使っている（外すと、未記入の警告を出しません）
+    </label>
+    {% endif %}
     {% if o.in_use and not o.is_display %}
     <label class="hint" style="display:block;margin:10px 0">
       <input type="checkbox" name="is_display" value="1" style="margin-right:6px">
