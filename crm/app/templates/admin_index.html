@@ -1,0 +1,174 @@
+{% extends "base.html" %}
+{% block title %}利用者・組織{% endblock %}
+{% block content %}
+<div class="card">
+  <h2 style="margin-top:0">利用者</h2>
+  <p class="hint">
+    <b>初期パスワードをこちらで決めません。</b>招待リンクを送り、本人に決めてもらいます。
+    メールが出ない環境では、表示されるリンクを渡してください。</p>
+  <div class="tblwrap"><table>
+    <thead><tr><th>名前</th><th>メール</th><th style="width:130px">役割</th>
+      <th>所属</th><th style="width:90px">状態</th><th style="width:200px"></th></tr></thead>
+    <tbody>
+    {% for u in users %}
+    <tr>
+      <td>{{ u.name }}</td>
+      <td>
+        {# **打ち間違いをその場で直せるようにする。**
+           直せないと、その都度こちらへの依頼になる #}
+        <form method="post" action="{{ url_for('admin.user_update', uid=u.id) }}"
+              style="display:flex;gap:4px;align-items:center">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="action" value="email">
+          <input name="email" type="email" value="{{ u.email }}"
+                 style="min-width:200px;flex:1">
+          <button class="btn" type="submit">直す</button>
+        </form>
+      </td>
+      <td>
+        <form method="post" action="{{ url_for('admin.user_update', uid=u.id) }}"
+              style="display:flex;gap:4px">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="action" value="role">
+          <select name="role" onchange="this.form.submit()">
+            {% for r in roles %}<option value="{{ r }}" {{ 'selected' if u.role==r }}>
+              {{ ROLE_LABEL.get(r, r) }}</option>{% endfor %}
+          </select>
+        </form>
+      </td>
+      <td>
+        {% if u.is_outside %}
+          {% if u.scope_partner_id %}<a href="{{ url_for('main.partner_detail', pid=u.scope_partner_id) }}">{{ u.scope.name if u.scope else '' }}</a>
+          {% else %}<span class="hint" style="color:var(--serious)">紐づけが未設定（何も見えません）</span>{% endif %}
+        {% else %}<span class="hint">自社</span>{% endif %}
+      </td>
+      <td>{% if u.is_active_user %}<span class="badge">有効</span>
+          {% else %}<span class="badge warn">無効</span>{% endif %}</td>
+      <td style="display:flex;gap:6px">
+        <form method="post" action="{{ url_for('admin.user_update', uid=u.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="action" value="invite">
+          <button class="btn" type="submit">招待し直す</button>
+        </form>
+        <form method="post" action="{{ url_for('admin.user_update', uid=u.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="action" value="toggle">
+          <button class="btn" type="submit">{{ '無効にする' if u.is_active_user else '有効にする' }}</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+
+  <h4>招待する</h4>
+  <form method="post" action="{{ url_for('admin.user_new') }}" id="inviteform">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="cols">
+      <div class="fld"><label>名前</label><input name="name" required></div>
+      <div class="fld"><label>メール</label><input name="email" type="email" required></div>
+      <div class="fld"><label>役割</label>
+        <select name="role" id="invrole">
+          {% for r in roles %}<option value="{{ r }}">{{ ROLE_LABEL.get(r, r) }}</option>{% endfor %}
+        </select></div>
+    </div>
+    <div class="fld" id="invscope" style="grid-template-columns:110px 1fr;display:none">
+      <label>どちらの方</label>
+      <div>
+        <select name="scope_id">
+          <option value="">選んでください</option>
+          {% for p in partners %}<option value="{{ p.id }}">{{ p.name }}</option>{% endfor %}
+        </select>
+      </div>
+    </div>
+    <div class="hint" id="invoutside" style="display:none;margin-top:6px">
+      <b>いまは招待するだけで、ログインしても何も表示されません。</b>
+      何をお見せするかが決まってから、「機能の公開」でまとめて出します。
+    </div>
+    <div class="bar" style="margin-top:12px">
+      <button class="btn primary" type="submit">招待する</button>
+      <span class="hint">招待リンクが表示されます。メールが出ない環境では、それを渡してください。</span>
+    </div>
+  </form>
+</div>
+
+{# **役割ごとに何が見えるかを、表で1枚にする。**
+   画面を回って確かめるやり方だと、確かめ漏れた画面から漏れる #}
+<div class="card" id="roles">
+  <h2 style="margin-top:0">ロール別にできること</h2>
+  <p class="hint">
+    上の「役割」を変えるときの目安です。<b>顧問先</b>は社外の方で、
+    <b>自社分のみ</b>＝その顧問先ご自身の会社のことだけが見え、他社は一覧にも出ません。</p>
+  <div class="tblwrap"><table class="roletbl">
+    <thead><tr><th>できること</th>
+      {% for r in matrix_roles %}<th>{{ ROLE_LABEL[r] }}</th>{% endfor %}</tr></thead>
+    <tbody>
+    {% for row in matrix %}
+    <tr>
+      <td>{% if row.strong %}<b>{{ row.what }}</b>{% else %}{{ row.what }}{% endif %}
+        {% if row.note %}<span class="badge">{{ row.note }}</span>{% endif %}</td>
+      {% for r in matrix_roles %}
+      {% set v = row.by[r] %}
+      <td class="{{ 'scoped' if v not in ('○','×','全件') }}">{{ v }}</td>
+      {% endfor %}
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  <ul class="hint" style="margin:10px 0 0;padding-left:1.2em">
+    {% if is_master() %}
+    <li><b>マスターは当社（松本）だけ</b>です。作りかけの機能もここからだけ見えます。</li>
+    {% endif %}
+    <li>非公開の機能は、URLを直に開いても<b>「ページがありません」</b>を返します。
+      あることが分からないようにするためです。</li>
+    <li>直した内容は、役割にかかわらず<b>変更履歴</b>に「誰が・いつ・何を」が残ります。</li>
+  </ul>
+</div>
+
+{# 確認モード中は出さない。**先方の画面に無いものを出すと確認にならない** #}
+{% if is_master() %}
+{# **アカウントを作らずに確かめられるようにする。**
+   確認用アカウントを作って回ると、それが本番に残る #}
+<div class="card">
+  <h2 style="margin-top:0">見え方を確かめる</h2>
+  <p class="hint">
+    アカウントを用意せずに、<b>その役割で画面がどう見えるか</b>を確認できます（マスターだけ）。
+    <b>表示が変わるだけ</b>で、操作の記録はマスターのまま残ります。</p>
+  <div class="bar" style="flex-wrap:wrap;gap:8px">
+    {% for r in matrix_roles if r != 'master' %}
+    <form method="post" action="{{ url_for('auth.preview', onoff=r) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="back" value="{{ url_for('main.dashboard') }}">
+      {% if r == 'outside' %}
+      <select name="scope_id" style="min-width:200px">
+        {% for p in partners %}<option value="{{ p.id }}">{{ p.name }}</option>{% endfor %}
+      </select>
+      {% endif %}
+      <button class="btn" type="submit">{{ ROLE_LABEL[r] }}として表示</button>
+    </form>
+    {% endfor %}
+  </div>
+  {% if not partners %}
+  <p class="hint" style="margin-bottom:0">取引先が1件もないため、社外の方としての確認はできません。</p>
+  {% endif %}
+</div>
+{% endif %}
+
+{% endblock %}
+{% block script %}
+/* 役割が「顧問先」のときだけ、どの顧問先かを聞く。
+   **紐づけ忘れると1件も見えない**ので、その場で選ばせる */
+(function () {
+  var role = document.getElementById('invrole');
+  var box = document.getElementById('invscope');
+  var note = document.getElementById('invoutside');
+  if (!role || !box) return;
+  function sync() {
+    var out = role.value === 'outside';
+    box.style.display = out ? 'grid' : 'none';
+    note.style.display = out ? 'block' : 'none';
+  }
+  role.addEventListener('change', sync);
+  sync();
+})();
+{% endblock %}

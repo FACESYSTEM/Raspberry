@@ -1,0 +1,105 @@
+{% extends fixmode_base %}
+{% block title %}届いたひとこと{% endblock %}
+
+{% macro row(n, phase) %}
+<tr>
+  <td>
+    <a href="{{ n.page }}">{{ (n.page_title or n.page).split(' - ')[0] }}</a>
+    <div class="hint">{{ n.page }}</div>
+  </td>
+  <td>
+    {% if n.quote %}<div class="quoted">{{ n.quote|truncate(120) }}</div>{% endif %}
+    <b>{{ n.body }}</b>
+    <div class="hint">{{ n.author_name or '' }}　{{ n.created_at.strftime('%Y-%m-%d %H:%M') if n.created_at }}</div>
+    {% if n.reopen_note %}
+    <div class="reopened">まだ直っていない：{{ n.reopen_note }}</div>
+    {% endif %}
+    {% if n.fixed_note and phase != 'todo' %}
+    <div class="fixednote">直した内容：{{ n.fixed_note }}</div>
+    {% endif %}
+  </td>
+  <td>
+    {% if phase == 'todo' and can_fix %}
+    <form method="post" action="{{ url_for('fixmode.fixed', nid=n.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
+      <input name="fixed_note" placeholder="何を直したか（任意）" style="width:100%;margin-bottom:6px">
+      <button class="btn primary" type="submit">直しました</button>
+    </form>
+    {% elif phase == 'todo' %}
+    <span class="hint">当社が直します。しばらくお待ちください。</span>
+
+    {% elif phase == 'waiting' and can_close %}
+    <div class="hint" style="margin-bottom:6px">
+      {% if n.fixed_by_name %}{{ n.fixed_by_name }}が{% endif %}{{ n.fixed_at.strftime('%Y-%m-%d %H:%M') if n.fixed_at }}に直しました。<br>
+      <b>画面を開いて、直っているかご覧ください。</b>
+    </div>
+    <form method="post" action="{{ url_for('fixmode.accept', nid=n.id) }}"
+          style="margin-bottom:6px">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
+      <button class="btn primary" type="submit">確認しました</button>
+    </form>
+    <form method="post" action="{{ url_for('fixmode.reopen', nid=n.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
+      <input name="reopen_note" placeholder="どこが直っていないか" style="width:100%;margin-bottom:6px">
+      <button class="btn" type="submit">まだ直っていない</button>
+    </form>
+
+    {% elif phase == 'waiting' %}
+    <span class="hint">直しました。先方の確認待ちです。</span>
+
+    {% else %}
+    {# **名前が無くても文が壊れないようにする。**
+       古いデータには記録者が入っていないことがある #}
+    <div class="hint">
+      {% if n.done_by_name %}{{ n.done_by_name }}が確認{% else %}確認済み{% endif %}
+      <br>{{ n.done_at.strftime('%Y-%m-%d %H:%M') if n.done_at }}</div>
+    {% if can_close %}
+    <form method="post" action="{{ url_for('fixmode.reopen', nid=n.id) }}"
+          style="margin-top:4px">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
+      <button class="btn" type="submit">戻す</button>
+    </form>
+    {% endif %}
+    {% endif %}
+  </td>
+</tr>
+{% endmacro %}
+
+{% macro table(rows, phase) %}
+<div class="tblwrap"><table>
+  <thead><tr><th style="width:170px">画面</th><th>囲んだところ／ひとこと</th>
+    <th style="width:230px"></th></tr></thead>
+  <tbody>{% for n in rows %}{{ row(n, phase) }}{% endfor %}</tbody>
+</table></div>
+{% endmacro %}
+
+{% block content %}
+<div class="card">
+  <h2 style="margin-top:0">届いたひとこと</h2>
+  <p class="hint">
+    <b>直すのは当社、確認するのは皆さま</b>です。直した本人が閉じられる形にすると、
+    <b>直したつもりが直っていない</b>まま通ってしまいます。
+    直したものは「確認待ち」に移りますので、画面を開いて確かめてから閉じてください。
+    <b>消さずに残ります。</b></p>
+</div>
+
+<div class="card">
+  <h3 style="margin-top:0">確認待ち（{{ waiting|length }}）</h3>
+  <p class="hint">当社が直しました。<b>直っているかご覧いただき、よければ閉じてください。</b></p>
+  {% if waiting %}{{ table(waiting, 'waiting') }}
+  {% else %}<div class="hint">ありません。</div>{% endif %}
+</div>
+
+<div class="card">
+  <h3 style="margin-top:0">まだ直していない（{{ todo|length }}）</h3>
+  {% if todo %}{{ table(todo, 'todo') }}
+  {% else %}<div class="hint">ありません。</div>{% endif %}
+</div>
+
+{% if done %}
+<div class="card">
+  <h3 style="margin-top:0">確認できた（{{ done|length }}）</h3>
+  {{ table(done, 'done') }}
+</div>
+{% endif %}
+{% endblock %}

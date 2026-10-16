@@ -1,0 +1,14 @@
+{# パスワードの伏字を切り替える。**打ち間違いに気づけないと、何度も弾かれる。**
+   入力欄の中に置かず、右隣のボタンにする（欄の幅を狭めないため）。 #}
+document.querySelectorAll('[data-pw]').forEach(function (btn) {
+  var input = document.getElementById(btn.dataset.pw);
+  if (!input) return;
+  btn.addEventListener('click', function () {
+    var show = input.type === 'password';
+    input.type = show ? 'text' : 'password';
+    btn.textContent = show ? '隠す' : '表示';
+    /* **押したことを読み上げにも伝える。**目で見えない人にも状態が分かるように */
+    btn.setAttribute('aria-pressed', show ? 'true' : 'false');
+    input.focus();
+  });
+});

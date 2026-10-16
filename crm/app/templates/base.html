@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="ja" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+{# **明るい配色に固定する。**端末が暗くても、入力欄などが暗転しないように #}
+<meta name="color-scheme" content="light">
+<meta name="csrf-token" content="{{ csrf_token() }}">
+<title>{% block title %}{% endblock %} - {{ ORG_NAME }}</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}?v={{ STATIC_V }}">
+</head>
+<body>
+{% if current_user.is_authenticated %}
+{% if previewing() %}
+{# **いま先方の見え方で見ている**ことを、常に画面に出す。
+   出しておかないと「隠したつもりが見えていた」に気づけない #}
+<div class="previewbar">
+  <span><b>{{ ROLE_LABEL.get(preview_role(), preview_role()) }}</b>の見え方で表示しています{% if preview_scope() %}（{{ preview_scope().name }}）{% endif %}</span>
+  <a class="btn" href="{{ url_for('auth.preview', onoff='off') }}">マスターに戻る</a>
+</div>
+{% endif %}
+{% include "fixmode/widget.html" %}
+<div class="wrap{{ ' previewing' if previewing() }}">
+  <nav class="side">
+    <a class="brand" href="{{ url_for('main.dashboard') }}">
+      <img src="{{ url_for('static', filename='logo-light.png') }}?v={{ STATIC_V }}"
+           alt="{{ ORG_NAME }}">
+    </a>
+
+    <div class="nav">
+      <div class="sec">メイン</div>
+      <a class="item {{ 'active' if request.endpoint=='main.dashboard' }}"
+         href="{{ url_for('main.dashboard') }}">ダッシュボード</a>
+      {% if feature_open('partners') %}
+      <a class="item {{ 'active' if request.endpoint and request.endpoint.startswith('main.partner') }}"
+         href="{{ url_for('main.partners') }}">取引先</a>
+      {% endif %}
+      {% if is_owner() %}
+      <div class="sec">管理</div>
+      {% if feature_open('org') %}
+      <a class="item {{ 'active' if request.endpoint=='admin.index' }}"
+         href="{{ url_for('admin.index') }}">利用者・組織</a>{% endif %}
+      {% if feature_open('org') %}
+      <a class="item {{ 'active' if request.endpoint=='admin.org' }}"
+         href="{{ url_for('admin.org') }}">自社の情報{% if ORG_ISSUES %}
+        <span class="badge warn">{{ ORG_ISSUES }}</span>{% endif %}</a>{% endif %}
+      <a class="item {{ 'active' if request.endpoint=='fixmode.index' }}"
+         href="{{ url_for('fixmode.index') }}">届いたひとこと{% if FIXMODE_OPEN %}
+        <span class="badge warn">{{ FIXMODE_OPEN }}</span>{% endif %}</a>
+      {% if feature_open('choices') %}
+      <a class="item {{ 'active' if request.endpoint and request.endpoint.startswith('admin.choice') }}"
+         href="{{ url_for('admin.choices') }}">選択肢</a>{% endif %}
+      {% if feature_open('apikeys') %}
+      <a class="item {{ 'active' if request.endpoint=='admin.apikeys' }}"
+         href="{{ url_for('admin.apikeys') }}">外部連携の鍵</a>{% endif %}
+      {% if feature_open('credentials') %}
+      <a class="item {{ 'active' if request.endpoint=='admin.credentials' }}"
+         href="{{ url_for('admin.credentials') }}">ログイン情報</a>{% endif %}
+      {% endif %}
+    </div>
+
+    {% if real_is_master() and not previewing() %}
+    <div class="sec">開発</div>
+    <a class="item {{ 'active' if request.endpoint=='admin.features' }}"
+       href="{{ url_for('admin.features') }}">機能の公開</a>
+    {% endif %}
+
+    {# **修正モード。**指摘を集めているあいだだけ入れる #}
+    {% include "fixmode/switch.html" %}
+
+    {# 自分の情報とログアウト。**上の帯を1行使うほどのものではない**ので下に畳む #}
+    <div class="me">
+      <div class="who">
+        <span class="name">{{ current_user.name }}</span>
+        <span class="role">{{ ROLE_LABEL.get(current_user.role, current_user.role) }}{{ '（確認中）' if previewing() }}</span>
+      </div>
+      <a class="out" href="{{ url_for('auth.logout') }}">ログアウト</a>
+    </div>
+  </nav>
+
+  <div class="body">
+    <div class="main">
+      {% for m in get_flashed_messages() %}<div class="flash">{{ m }}</div>{% endfor %}
+      {% block content %}{% endblock %}
+    </div>
+  </div>
+</div>
+{% else %}
+<div class="authwrap">
+  {% block anon %}{% endblock %}
+</div>
+{% endif %}
+<div id="toast"></div>
+<script>
+function toast(msg){
+  var t=document.getElementById('toast');
+  t.textContent=msg; t.classList.add('on');
+  clearTimeout(t._h); t._h=setTimeout(function(){t.classList.remove('on');},2200);
+}
+{% block script %}{% endblock %}
+</script>
+{% include "fixmode/script.html" %}
+</body>
+</html>

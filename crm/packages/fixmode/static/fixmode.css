@@ -1,0 +1,106 @@
+/* 修正モード。**持っていく先の色に合わせられるよう、変数で受ける。**
+   土台に同じ名前の変数があればそれを使い、無ければここの値で動く。 */
+:root{
+  --fix-accent:#2f6f4f;
+  --fix-good:#2f7d4f;
+  --fix-warn:#a8790f;
+  --fix-serious:#b3402c;
+  --fix-line:#e5e3df;
+  --fix-soft:#faf9f7;
+  --fix-muted:#9a968e;
+  --fix-ink2:#6b6862;
+}
+
+/* ---- 修正モード。**直したいところを四角で囲む** ---- */
+/* **display を持つ要素は hidden より強い。**入れていないのに出てしまう */
+.notebar[hidden],.noteopen[hidden],.notepanel[hidden],.notelayer[hidden]{display:none}
+
+.noteopen{position:fixed;right:20px;bottom:20px;z-index:60;
+  width:52px;height:52px;border-radius:50%;border:none;cursor:pointer;
+  background:var(--fix-accent);color:#fff;display:grid;place-items:center;
+  box-shadow:0 4px 14px rgba(0,0,0,.22)}
+.noteopen:hover{filter:brightness(1.08)}
+.noteopen:focus-visible{outline:3px solid var(--fix-accent);outline-offset:3px}
+
+/* 囲みを描く面。**普段のクリックは通す**（下の要素を触れなくしない） */
+.notelayer{position:absolute;left:0;top:0;width:100%;height:100%;
+  z-index:58;pointer-events:none}
+body.fixmode{cursor:crosshair}
+body.fixmode .side,body.fixmode .notepanel{cursor:auto}
+body.nosel{user-select:none}
+
+.noteghost{position:absolute;border:2px dashed var(--fix-accent);
+  background:rgba(47,111,79,.10);border-radius:4px;pointer-events:none}
+.noteghost.live{border-style:solid}
+
+.notemark{position:absolute;border:2px solid var(--fix-warn);
+  background:rgba(168,121,15,.10);border-radius:4px;cursor:pointer;
+  pointer-events:auto;padding:0}
+.notemark span{position:absolute;left:-11px;top:-11px;width:22px;height:22px;
+  border-radius:50%;background:var(--fix-warn);color:#fff;font-size:12px;
+  display:grid;place-items:center;font-variant-numeric:tabular-nums}
+.notemark:hover{background:rgba(168,121,15,.20)}
+
+.notepanel{position:absolute;z-index:61;width:340px;
+  max-width:calc(100vw - 40px);background:#fff;border:1px solid var(--fix-line);
+  border-radius:10px;box-shadow:0 10px 34px rgba(0,0,0,.18);padding:16px}
+.notepanel.corner{position:fixed;right:20px;bottom:84px;left:auto;top:auto}
+.notehead{display:flex;align-items:center;margin-bottom:10px}
+.notehead b{font-size:15px}
+.notehead .x{margin-left:auto;background:none;border:none;cursor:pointer;
+  font-size:20px;line-height:1;color:var(--fix-muted);padding:0 4px}
+.notepanel blockquote{margin:0 0 10px;padding:8px 12px;
+  border-left:3px solid var(--fix-accent);background:var(--fix-soft);
+  font-size:12.5px;color:var(--fix-ink2);border-radius:0 4px 4px 0;
+  max-height:88px;overflow:auto}
+.notepanel textarea{width:100%;resize:vertical}
+.notefoot{display:flex;align-items:center;gap:10px;margin-top:10px}
+.notefoot .hint{font-size:11.5px;line-height:1.5;flex:1}
+#noteread p{margin:0 0 4px;font-size:13.5px}
+#noteread .who{font-size:11.5px;color:var(--fix-muted)}
+
+/* 修正モードの帯。**いま指摘できる状態だと分かるようにする** */
+.notebar{position:sticky;top:0;z-index:59;display:flex;align-items:center;
+  gap:12px;padding:7px 16px;background:#2b2a27;color:#fff;font-size:12.5px}
+.notebar b{font-weight:600}
+.notebar a{color:#fff;margin-left:auto;text-decoration:underline}
+.notebar .off{background:rgba(255,255,255,.16);border:none;color:#fff;
+  border-radius:6px;padding:3px 10px;cursor:pointer;font-size:12px}
+
+/* サイドの切り替え */
+.modeswitch{display:flex;align-items:center;gap:8px;margin:0 14px 10px;
+  padding:8px 10px;border:1px solid var(--fix-line);border-radius:8px;
+  background:var(--fix-soft);font-size:12.5px;cursor:pointer;width:calc(100% - 28px)}
+.modeswitch .dot{width:9px;height:9px;border-radius:50%;background:var(--fix-muted)}
+.modeswitch.on{border-color:var(--fix-accent);color:var(--fix-accent)}
+.modeswitch.on .dot{background:var(--fix-accent)}
+.modeswitch .n{margin-left:auto;font-variant-numeric:tabular-nums}
+
+.quoted{border-left:3px solid var(--fix-line);padding-left:10px;margin-bottom:6px;
+  color:var(--fix-ink2);font-size:12.5px}
+
+@media print{.noteopen,.notepanel,.notebtn,.notebar,.modeswitch,.notelayer{display:none !important}}
+.reopened{margin-top:5px;color:var(--fix-serious);font-size:12.5px}
+.fixednote{margin-top:5px;color:var(--fix-good);font-size:12.5px}
+.notemark.moved{border-style:dashed;opacity:.75}
+.notemark.fixed{border-color:var(--fix-good);background:rgba(47,125,79,.10)}
+.notemark.fixed span{background:var(--fix-good)}
+.movedhint{color:var(--fix-warn);font-size:12px;margin-bottom:6px}
+.notemark em{position:absolute;left:-2px;top:-24px;font-style:normal;font-size:11px;
+  background:var(--fix-warn);color:#fff;padding:1px 7px;border-radius:4px;
+  white-space:nowrap}
+.notemark.fixed em{background:var(--fix-good)}
+.notemark span{z-index:1}
+
+/* 土台に知らせる口が無いときの、自前の一言 */
+.notetoast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%);
+  z-index:80;background:#2b2a27;color:#fff;padding:9px 18px;border-radius:8px;
+  font-size:13px;box-shadow:0 4px 16px rgba(0,0,0,.24)}
+
+/* 土台にボタンの見た目が無いときの、最低限 */
+.notepanel .btn{border:1px solid var(--fix-line);background:#fff;border-radius:7px;
+  padding:6px 14px;cursor:pointer;font-size:13px}
+.notepanel .btn.primary{background:var(--fix-accent);border-color:var(--fix-accent);
+  color:#fff}
+.notepanel .bar{display:flex;gap:8px;flex-wrap:wrap}
+.notepanel .hint{color:var(--fix-muted)}

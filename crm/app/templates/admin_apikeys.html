@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}外部連携の鍵{% endblock %}
+{% block content %}
+<div class="card">
+  <h2 style="margin-top:0">外部連携の鍵</h2>
+  <p class="hint">
+    渡す先ごとに発行します。<b>平文は保存しません。</b>発行のときに1度だけ表示するので、
+    その場で控えて渡してください。止めたいときはその1本だけ失効させます。</p>
+</div>
+
+{% if plain %}
+<div class="card" style="border-color:var(--accent)">
+  <h3 style="margin-top:0">発行しました。<b>この画面を離れると二度と見られません。</b></h3>
+  <code style="display:block;padding:10px;background:var(--surface2);
+               border-radius:8px;word-break:break-all">{{ plain }}</code>
+</div>
+{% endif %}
+
+<div class="card tblwrap">
+  <table>
+    <thead><tr><th>名前</th><th style="width:120px">用途</th>
+      <th style="width:120px">先頭</th><th style="width:150px">最後に使われた</th>
+      <th style="width:110px">状態</th><th style="width:110px"></th></tr></thead>
+    <tbody>
+    {% for r in rows %}
+    <tr{% if not r.alive %} style="opacity:.55"{% endif %}>
+      <td>{{ r.name }}</td><td>{{ r.scope }}</td>
+      <td><code>{{ r.prefix }}…</code></td>
+      <td>{{ r.last_used_at|jst }}</td>
+      <td>{% if r.alive %}<span class="badge">有効</span>
+          {% else %}<span class="badge warn">失効</span>{% endif %}</td>
+      <td>{% if r.alive %}
+        <form method="post" onsubmit="return confirm('この鍵を失効させます。以後この鍵では受け付けません。')">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="action" value="revoke">
+          <input type="hidden" name="id" value="{{ r.id }}">
+          <button class="btn" type="submit">失効</button>
+        </form>{% endif %}</td>
+    </tr>
+    {% else %}<tr><td colspan="6" class="hint">まだありません。</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="card">
+  <h3 style="margin-top:0">発行する</h3>
+  <form method="post" style="display:flex;gap:8px;flex-wrap:wrap">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input name="name" placeholder="渡す先が分かる名前" required style="width:240px">
+    <input name="scope" placeholder="用途（既定 default）" style="width:180px">
+    <input name="note" placeholder="メモ" style="width:240px">
+    <button class="btn" type="submit">発行する</button>
+  </form>
+</div>
+{% endblock %}

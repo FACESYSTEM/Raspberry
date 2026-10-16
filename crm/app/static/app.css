@@ -1,0 +1,325 @@
+/* 画面の見た目はここに集める。**外部CSSフレームワークを使わない。**
+   色は必ず変数を通す（直接書くと、後で色を変えるときに探し回ることになる）。
+
+   **明るい配色に固定している。**端末の設定で暗くなると、画面共有や
+   印刷物と見え方が変わり、説明のときに食い違う。全員が同じ見た目になるほうを取った。 */
+:root{
+  --bg:#f7f7f5; --surface:#fff; --surface2:#faf9f7; --grid:#e5e3df;
+  --ink:#1c1b19; --ink2:#6b6862; --accent:#2f6f4f;
+  --good:#2f7d4f; --warning:#a8790f; --serious:#b3402c; --muted:#9a968e;
+  --radius:10px;
+}
+
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font-family:system-ui,-apple-system,"Hiragino Sans","Noto Sans JP",sans-serif;
+  font-size:14px;line-height:1.7}
+a{color:var(--accent)}
+.wrap{display:flex;min-height:100vh}
+
+/* 左のメニュー。**縦に3段**（ロゴ／項目／自分の情報）。
+   自分の名前とログアウトのために上に帯を1本使うのは場所の無駄なので、下に畳む */
+.side{width:200px;flex:0 0 200px;background:var(--surface2);
+  border-right:1px solid var(--grid);display:flex;flex-direction:column;
+  position:sticky;top:0;height:100vh}
+.side .brand{display:block;padding:18px 16px 14px}
+.side .brand img{width:100%;max-width:150px;height:auto;display:block}
+.side .nav{flex:1;overflow-y:auto;padding-bottom:10px}
+.side .item{display:block;padding:7px 16px;color:var(--ink);text-decoration:none}
+.side .item:hover{background:var(--surface)}
+.side .item.active{background:var(--surface);border-left:3px solid var(--accent);
+  padding-left:13px;font-weight:700}
+.side .sec{font-size:10px;color:var(--muted);margin:14px 16px 4px}
+
+/* 自分の情報。**小さく、でも誰で入っているかは分かるように** */
+.side .me{border-top:1px solid var(--grid);padding:10px 16px 12px;
+  display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.side .me .who{min-width:0;flex:1}
+.side .me .name{display:block;font-size:12px;font-weight:700;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.side .me .role{font-size:10px;color:var(--ink2)}
+.side .me .out{font-size:11px;color:var(--ink2);text-decoration:none;
+  border:1px solid var(--grid);border-radius:6px;padding:3px 8px;background:var(--surface)}
+.side .me .out:hover{color:var(--ink)}
+
+.body{flex:1;min-width:0}
+.main{padding:20px;max-width:1200px}
+.card{background:var(--surface);border:1px solid var(--grid);
+  border-radius:var(--radius);padding:16px;margin-bottom:16px}
+.card h2,.card h3{margin-top:0}
+.tblwrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse}
+th,td{padding:7px 8px;border-bottom:1px solid var(--grid);text-align:left;
+  vertical-align:top}
+th{font-size:12px;color:var(--ink2);font-weight:600;white-space:nowrap}
+/* 数字は右揃え・桁区切り。左揃えだと桁を目で追えない */
+.num{text-align:right;font-variant-numeric:tabular-nums}
+/* 入力欄と同じ高さにする（6+20+6+枠2 = 34px）。並べたときに段差が出ない */
+.btn{display:inline-block;padding:6px 12px;border:1px solid var(--grid);
+  border-radius:8px;background:var(--surface);color:var(--ink);
+  text-decoration:none;cursor:pointer;font-size:13px;font-family:inherit}
+.btn:hover{background:var(--surface2)}
+.btn.active{border-color:var(--accent);font-weight:700}
+.btn[disabled]{opacity:.5;cursor:not-allowed}
+/* **input と select の枠の高さを揃える。**
+   ブラウザ既定のまま並べると select だけ高さが違い、枠の上下がずれる。
+   appearance:none で自前の見た目にし、余白と行の高さを1つに固定する。 */
+input,select,textarea{padding:6px 9px;border:1px solid var(--grid);
+  border-radius:7px;background:var(--surface);color:var(--ink);
+  font-size:13px;font-family:inherit;line-height:20px;height:34px;
+  -webkit-appearance:none;appearance:none;margin:0;vertical-align:top}
+textarea{height:auto;min-height:56px;resize:vertical}
+input[type=checkbox],input[type=radio]{height:auto;width:auto;
+  -webkit-appearance:auto;appearance:auto}
+/* select の下向き矢印を自前で描く（外部ファイルを読まない） */
+select{padding-right:26px;
+  background-image:url("data:image/svg+xml;charset=utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%236b6862' stroke-width='1.4'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right 9px center;
+  background-size:10px 6px}
+
+.btn{line-height:20px}
+.field{display:grid;grid-template-columns:130px 1fr;gap:10px;
+  padding:7px 0;border-bottom:1px solid var(--grid);align-items:center}
+.field label{color:var(--ink2);font-size:12px}
+.badge{display:inline-block;padding:1px 8px;border-radius:999px;
+  border:1px solid var(--grid);font-size:11px;color:var(--ink2)}
+.badge.warn{color:var(--serious);border-color:var(--serious)}
+/* お知らせ。**エラーとは限らない**ので、赤一色にしない。
+   左に印を付けて目立たせ、文字は読みやすい色のままにする */
+.flash{border:1px solid var(--grid);border-left:3px solid var(--warning);
+  color:var(--ink);background:var(--surface);padding:10px 14px;
+  border-radius:var(--radius);margin-bottom:14px;font-size:13px}
+.hint{font-size:11px;color:var(--ink2)}
+/* インライン編集。**押せると分かる手がかりを出す** */
+.ed{border-bottom:1px dashed var(--muted);cursor:pointer}
+.ed:hover{background:var(--surface2)}
+.ed.changed{background:var(--surface2)}
+#toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);
+  background:var(--ink);color:var(--surface);padding:8px 16px;
+  border-radius:999px;opacity:0;transition:opacity .2s;pointer-events:none}
+#toast.on{opacity:.95}
+
+/* 横並びの操作列。折り返す（スマホで押せなくならないように） */
+.bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.notice{border-left:3px solid var(--serious);background:var(--surface2);
+  padding:10px 14px;border-radius:8px}
+.hint.warn{color:var(--serious)}
+details>summary{list-style:none;display:inline-block}
+details>summary::-webkit-details-marker{display:none}
+
+/* スマホ。**移動中・商談待ちに片手で使える形にする。**
+   PCでしかできない作業を無くすのが目的なので、隠さず縦に積む */
+@media (max-width:760px){
+  /* スマホでは横一列に畳む。**移動中に片手で使えるように** */
+  .wrap{display:block}
+  .side{width:auto;flex:none;height:auto;position:static;
+    border-right:none;border-bottom:1px solid var(--grid);display:block;padding:0}
+  .side .brand{padding:10px 12px 6px}
+  .side .brand img{max-width:130px}
+  .side .nav{display:flex;flex-wrap:wrap;align-items:center;gap:2px;
+    overflow:visible;padding:0 8px 8px}
+  .side .sec{display:none}
+  .side .item{padding:6px 12px;font-size:13px}
+  .side .item.active{border-left:none;border-bottom:2px solid var(--accent);padding-left:12px}
+  .side .me{padding:8px 12px}
+  .main{padding:12px}
+  .card{padding:12px}
+  /* 指で押せる大きさにする */
+  .btn{padding:8px 14px;font-size:14px}
+  /* 16px未満はiOSで勝手に拡大される。高さも指で押せる大きさにする */
+  input,select,textarea{padding:9px 10px;font-size:16px;height:42px;line-height:22px}
+  textarea{height:auto;min-height:70px}
+  /* 項目名と値を縦に積む。横2列だと値が潰れる */
+  .field{grid-template-columns:1fr;gap:2px;padding:10px 0}
+  table{font-size:13px}
+  th,td{padding:8px 6px}
+}
+
+/* 保存バー。**保存していない変更が残っていることを出す**（規約 §12） */
+.savebar{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:10px;
+  background:var(--surface);border:1px solid var(--grid);border-radius:var(--radius);
+  padding:10px 14px;margin-bottom:16px}
+.savebar .state{color:var(--ink2);font-size:13px}
+.savebar.dirty{border-color:var(--warning)}
+.savebar.dirty .state{color:var(--warning);font-weight:700}
+.savebar .spacer{margin-left:auto}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:700}
+.btn.primary[disabled]{opacity:.45}
+.btn.danger{color:var(--serious);border-color:var(--serious)}
+
+/* 項目を3列で並べる。狭くなったら自動で減る */
+.cols{display:grid;grid-template-columns:repeat(3,1fr);gap:0 24px}
+.cols.two{grid-template-columns:repeat(2,1fr)}
+/* 項目名は入力欄の高さに合わせて中央に置く。**枠の上端を揃える** */
+.fld{display:grid;grid-template-columns:110px 1fr;gap:10px;align-items:center;
+  padding:9px 0;border-bottom:1px solid var(--grid);min-width:0}
+.fld>label{align-self:center}
+.fld>label{color:var(--ink2);font-size:12px}
+.fld input,.fld select,.fld textarea{width:100%;min-width:0}
+.fld .ro{color:var(--ink2)}
+.card>.lead{color:var(--ink2);font-size:12px;margin:-4px 0 12px}
+.sec-danger{border-color:var(--serious)}
+.sec-danger h3{color:var(--serious)}
+
+@media (max-width:1000px){ .cols,.cols.two{grid-template-columns:1fr} }
+@media (max-width:760px){
+  .fld{grid-template-columns:1fr;gap:2px;padding:10px 0}
+  .savebar{padding:8px 10px}
+}
+
+/* 契約は開いて編集する。**畳んでおく**（一度しか使わない補助機能は畳む／土台 §4.7） */
+details.contract{border:1px solid var(--grid);border-radius:8px;padding:10px 12px;
+  margin-bottom:10px;background:var(--surface2)}
+details.contract[open]{background:var(--surface)}
+details.contract>summary{cursor:pointer;list-style:none;display:block}
+details.contract>summary::before{content:"▸ ";color:var(--ink2)}
+details.contract[open]>summary::before{content:"▾ "}
+details.contract>summary .hint{display:block;margin-top:2px}
+
+/* まとまりの小見出し。カード内をさらに分ける */
+.card h4{margin:22px 0 6px;font-size:13px;color:var(--ink2);
+  border-bottom:1px solid var(--grid);padding-bottom:5px}
+.card h4:first-of-type{margin-top:10px}
+
+/* ボタンの文字を折り返さない。**枠の高さが変わって行がずれる** */
+.btn{white-space:nowrap}
+
+/* 郵便番号の行。入力欄・ボタン・説明を1行に並べる */
+.zipline{display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0}
+.zipline input{width:120px;flex:0 0 auto}
+@media (max-width:760px){
+  .zipline .hint{flex-basis:100%}
+}
+
+/* 画面には出さず、紙にだけ出すもの */
+.printonly{display:none}
+
+/* ===== 印刷 =====================================================
+   **PDFはブラウザの印刷で作る**（設計指示書 §9.2 依存を増やさない）。
+   PDF生成のライブラリを入れると、日本語フォントの同梱や
+   追加パッケージが要り、先方の環境で動く条件が狭くなる。
+
+   画面のまま印刷すると、左のメニューや操作ボタンまで紙に出る。
+   **紙に要らないものを消し、白地に黒で出す。** */
+@media print{
+  :root{
+    --bg:#fff; --surface:#fff; --surface2:#fff; --grid:#bbb;
+    --ink:#000; --ink2:#444; --accent:#000; --muted:#666;
+    --good:#000; --warning:#000; --serious:#000;
+  }
+  @page{ margin:14mm 12mm; }
+  body{background:#fff;color:#000;font-size:10.5pt;line-height:1.6}
+
+  /* 操作するためのものは紙に要らない。**読むためのものは残す。** */
+  .side,.top,.savebar,.btn,#toast,.flash,.noprint{display:none !important}
+  /* 追加・記録のための空フォームは紙に出さない */
+  form[action$="/archive"],form[action$="/contracts"],form[action$="/touches"],
+  form[action$="/client-comments"],form[action$="/relations"],
+  form[action$="/introducer"]{display:none !important}
+  /* 画面では隠しているが、紙には出したいもの */
+  .printonly{display:block !important}
+
+  .wrap{display:block}
+  .body{margin:0}
+  .main{padding:0;max-width:none}
+
+  /* 折り畳みは開いた状態で出す。**畳んだまま印刷すると中身が消える** */
+  details{display:block !important}
+  details>*{display:revert !important}
+  details>summary{list-style:none}
+  details>summary::before{content:""}
+
+  /* 枠は残すが、影や角丸は落とす */
+  .card{border:1px solid var(--grid);border-radius:0;padding:8px 10px;
+    margin:0 0 8px;break-inside:avoid;page-break-inside:avoid}
+  .card h2,.card h3,.card h4{break-after:avoid;page-break-after:avoid}
+
+  /* 入力欄は枠を消して、中身だけを文字として見せる */
+  input,select,textarea{border:none;border-bottom:1px solid var(--grid);
+    border-radius:0;padding:1px 0;height:auto;background:none;
+    -webkit-appearance:none;appearance:none;color:#000}
+  select{background-image:none;padding-right:0}
+  textarea{min-height:0}
+  input::placeholder,textarea::placeholder{color:transparent}
+
+  .badge{border:1px solid var(--grid);color:#000}
+  table{font-size:9.5pt}
+  th,td{padding:4px 5px}
+  thead{display:table-header-group}   /* 表が複数ページに渡っても見出しを出す */
+  tr{break-inside:avoid;page-break-inside:avoid}
+
+  /* リンクは押せないので、行き先を紙に出す */
+  a[href^="http"]::after{content:" (" attr(href) ")";font-size:8pt;color:#555}
+  a{color:#000;text-decoration:none}
+}
+
+/* ===== ログイン・パスワード設定の画面 ==========================
+   毎日いちばん最初に見る画面。**ここが雑だと全体が雑に見える。**
+   広めの余白、ラベルは入力欄の上、ボタンはカード下部の帯に置く。 */
+.authwrap{min-height:100vh;background:var(--bg);
+  display:flex;flex-direction:column;align-items:center;padding:56px 16px 40px}
+.authbox{width:100%;max-width:440px}
+
+/* ロゴ。明るい配色に固定したので、暗い背景用は使わない */
+.logo{text-align:center;margin-bottom:26px}
+.logo img{width:230px;max-width:70%;height:auto}
+.logo .on-dark{display:none}
+
+
+.authbox .card{padding:0;overflow:hidden;margin-bottom:0}
+.authbox .card h2{font-size:16px;text-align:center;margin:0;
+  padding:22px 24px 4px}
+.authbox .card .lead{padding:0 24px;margin:6px 0 0;text-align:center}
+.authbox .card form{padding:18px 24px 22px}
+.authbox .card .notice{margin:0 24px 22px}
+
+/* 項目。ラベルは上、先頭に短い縦棒を置いて視線の起点にする */
+.authfld{margin-bottom:18px}
+.authfld label{display:flex;align-items:center;gap:7px;
+  font-size:13px;font-weight:700;margin-bottom:7px}
+.authfld label::before{content:"";width:3px;height:14px;border-radius:2px;
+  background:var(--accent);flex:0 0 auto}
+.authfld input{width:100%;height:42px;font-size:15px;padding:8px 12px}
+
+/* パスワード欄と「表示」ボタン */
+.pwline{display:flex;gap:8px;align-items:stretch}
+.pwline input{flex:1;min-width:0}
+.pwline .btn{flex:0 0 auto;height:42px;padding:0 14px;font-size:13px}
+
+/* ボタンはカード下部の帯に。**押す場所をはっきり分ける** */
+.btn.wide{display:block;width:100%;max-width:260px;margin:4px auto 0;
+  height:44px;line-height:28px;border-radius:999px;font-size:15px}
+
+.authfoot{text-align:center;margin-top:20px;font-size:13px;line-height:2.1}
+.authfoot a{display:inline-block}
+
+@media (max-width:520px){
+  .authwrap{padding:32px 14px 32px}
+  .logo img{width:190px}
+  .authbox .card form{padding:16px 18px 20px}
+  .authbox .card h2,.authbox .card .lead{padding-left:18px;padding-right:18px}
+}
+
+/* 先方の見え方で確認しているときの帯。**常に見える位置に置く。**
+   気づかないまま操作すると、権限の判断を誤る */
+.previewbar{position:sticky;top:0;z-index:20;display:flex;align-items:center;
+  gap:12px;background:var(--warning);color:#fff;padding:7px 16px;font-size:13px;
+  font-weight:700}
+.previewbar .btn{margin-left:auto;background:#fff;border-color:#fff;color:var(--ink);
+  font-weight:700;padding:3px 12px;height:auto;line-height:20px}
+.wrap.previewing .side{height:auto;position:static}
+
+/* ロール別の一覧。**縦に読ませない。**役割ごとの列で見比べられるようにする */
+.roletbl th:not(:first-child),.roletbl td:not(:first-child){text-align:center;width:92px}
+.roletbl td:not(:first-child){color:var(--ink)}
+.roletbl td.scoped{color:#b26a00;font-weight:600;font-size:13px}
+/* 関与メンバー。**選ぶだけにする**（自由入力にすると表記がぶれる） */
+.memchips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:4px}
+.memchip{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--grid);
+  border-radius:999px;padding:4px 12px;font-size:13px;cursor:pointer;
+  background:var(--surface)}
+.memchip.on{border-color:var(--accent);color:var(--accent);background:#eef5f0}
+.memchip input{margin:0}
+/* 数字が実際と違いうることを伝える帯。**目立たせる**（黙って過大に出さない） */
+.notice.serious{background:#fdf3f1;border-left-width:4px}
+.notice.serious p{margin:0}

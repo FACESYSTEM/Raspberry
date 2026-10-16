@@ -1,0 +1,18 @@
+# 本番に入れるもの。**版を固定する。**先方の環境で pip install し直したときに
+# 中身が変わると、動いていたものが動かなくなる（§9.2）。
+#
+# 開発用（pytest 等）は requirements-dev.txt に分けてある。**本番には入れない。**
+
+Flask==3.0.3
+Flask-SQLAlchemy==3.1.1
+Flask-Login==0.6.3
+Flask-WTF==1.2.1
+python-dotenv==1.0.1
+gunicorn==22.0.0
+
+# 郵便番号から住所を引くときのCA証明書。**環境差で開発だけ落ちるのを防ぐ**
+certifi==2026.7.22
+
+# 保管した秘密の暗号化に使う。**特に版を固定する。**
+# 非互換が入ると CREDENTIAL_KEY で暗号化したものを復号できなくなる
+cryptography==50.0.0

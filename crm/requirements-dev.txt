@@ -1,0 +1,5 @@
+# 開発・テスト用。**本番には入れない**（§9.2 入れるものを最小にする）。
+#
+#   .venv/bin/pip install -r requirements.txt -r requirements-dev.txt
+
+pytest==8.3.2

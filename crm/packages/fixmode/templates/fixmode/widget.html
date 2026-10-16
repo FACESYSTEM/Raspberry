@@ -1,0 +1,56 @@
+{# 修正モードの部品一式。**本文のいちばん先に置く。**
+   帯・囲みの面・書く欄・丸いボタン。入れていないあいだは何も出ない。 #}
+{% if FIXMODE_ON %}
+<div class="notebar" id="notebar" hidden>
+  <b>修正モード</b>
+  <span id="notehintmsg">直したいところを、ドラッグで四角く囲んでください。</span>
+  {# **開けない人にリンクを出さない。**押して403になるのが一番こたえる。
+     件数も、全画面ぶんの数なので、一覧を見られる人にだけ出す #}
+  {% if FIXMODE_CAN_FIX or FIXMODE_CAN_CLOSE %}
+  <a href="{{ url_for('fixmode.index') }}">届いているもの {{ FIXMODE_OPEN }}件</a>
+  {% endif %}
+  <button type="button" class="off" id="notemodeoff">やめる</button>
+</div>
+
+<div class="notelayer" id="notelayer" hidden></div>
+
+<div id="notepanel" class="notepanel" hidden>
+  <div class="notehead">
+    <b id="notepaneltitle">囲んだところ</b>
+    <button type="button" class="x" id="noteclose" aria-label="閉じる">×</button>
+  </div>
+  <blockquote id="notequoteview" hidden></blockquote>
+  <div id="noteform">
+    <textarea id="notebody" rows="4"
+      placeholder="ここが分かりにくい／この項目が要る・要らない　など"></textarea>
+    <div class="notefoot">
+      <span class="hint">囲んだ場所と、いま開いている画面も一緒に送られます。</span>
+      <button class="btn primary" type="button" id="notesend">送る</button>
+    </div>
+  </div>
+  <div id="noteread" hidden></div>
+  <div id="notecheck" hidden>
+    <div class="bar" style="margin-top:10px">
+      <button class="btn primary" type="button" id="noteok">直っています</button>
+      <button class="btn" type="button" id="noteng">まだ直っていない</button>
+    </div>
+    <div id="notengbox" hidden style="margin-top:8px">
+      <input id="notengnote" placeholder="どこが直っていないか" style="width:100%">
+      <div class="bar" style="margin-top:6px">
+        <button class="btn" type="button" id="notengsend">差し戻す</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<button type="button" id="noteopen" class="noteopen" hidden
+        title="この画面ぜんぶへのひとこと">
+  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 9.6 9.6 0 0 1-2.9-.4L3 21l1.6-4.6A8.2 8.2 0 0 1 3.6 11.5a8.4 8.4 0 0 1 9-8.4 8.4 8.4 0 0 1 8.4 8.4z"
+          stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
+  </svg>
+</button>
+
+<script type="application/json" id="notedata">{{ fixmode_notes_json()|safe }}</script>
+<link rel="stylesheet" href="{{ url_for('fixmode.static', filename='fixmode.css') }}">
+{% endif %}

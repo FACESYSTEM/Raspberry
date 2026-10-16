@@ -1,0 +1,9 @@
+{# 入／切。**普段の画面を汚さないよう、入れているあいだだけ動く。** #}
+{% if FIXMODE_ON %}
+<button type="button" class="modeswitch" id="modeswitch">
+  <span class="dot"></span>修正モード
+  {# 全画面ぶんの数。**一覧を開ける人にだけ出す** #}
+  {% if FIXMODE_OPEN and (FIXMODE_CAN_FIX or FIXMODE_CAN_CLOSE) %}
+  <span class="n">{{ FIXMODE_OPEN }}</span>{% endif %}
+</button>
+{% endif %}

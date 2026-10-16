@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}ダッシュボード{% endblock %}
+{% block content %}
+
+<div class="card">
+  <h2 style="margin-bottom:2px">ダッシュボード</h2>
+  <div class="hint">
+    取引先 {{ total }}件。
+    <strong>ここは見本です。</strong>業務が決まったら、
+    朝いちばんに見たいものに置き換えてください。
+  </div>
+</div>
+
+{# **汚れているものを消さず、「要確認」として出す**（土台 §4.1）。
+   制約で弾くと、実データが入らなくなる #}
+<div class="card">
+  <h3 style="margin-bottom:2px">要確認　{{ issues|length }}件</h3>
+  <div class="hint" style="margin-bottom:10px">
+    埋まっていない項目があるもの。<strong>消さずに、ここに出します。</strong>
+  </div>
+  {% if issues %}
+  <div class="tblwrap">
+  <table>
+    <thead><tr><th>取引先</th><th>足りないもの</th></tr></thead>
+    <tbody>
+    {% for p in issues %}
+      <tr>
+        <td><a href="{{ url_for('main.partner_detail', pid=p.id) }}">{{ p.name }}</a></td>
+        <td>{{ p.issues|join('／') }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}<div class="hint">ありません。</div>{% endif %}
+</div>
+
+{# **当社の作業まで並ぶので、先方の画面には出さない。**
+   本題が見えなくなる。個別の履歴は、その相手の画面に出ている #}
+{% if is_master() %}
+<div class="card">
+  <h3>最近の変更</h3>
+  <div class="tblwrap">
+  <table>
+    <thead><tr><th>日時</th><th>対象</th><th>項目</th><th>前</th><th>後</th><th>操作者</th></tr></thead>
+    <tbody>
+    {% for h in recent %}
+      <tr><td>{{ h.created_at|jst }}</td><td>{{ h.entity_type }}</td>
+        <td>{{ h.field }}</td><td>{{ h.old_value or '—' }}</td>
+        <td>{{ h.new_value or '—' }}</td>
+        <td>{{ h.user.name if h.user else '' }}</td></tr>
+    {% else %}<tr><td colspan="6" class="hint">まだありません。</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}

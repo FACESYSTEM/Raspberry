@@ -1,0 +1,47 @@
+{# インライン編集の共通処理。詳細画面から include する。
+   **押せると分かる手がかりを出す**（点線＋カーソル）。保存はその場で行い、
+   ボタンを押させない。ただし「押した瞬間に保存される」ことを画面に書く。 #}
+var CSRF = (document.querySelector('meta[name=csrf-token]') || {}).content || '';
+
+function patch(field, value, done) {
+  fetch(PATCH_URL, {
+    method: 'PATCH',
+    headers: {'Content-Type': 'application/json', 'X-CSRFToken': CSRF},
+    body: JSON.stringify({field: field, value: value})
+  }).then(function (r) { return r.json().then(function (d) {
+    return {ok: r.ok, d: d};
+  }); }).then(function (res) {
+    if (!res.ok || !res.d.ok) { toast(res.d.message || '保存できませんでした'); return; }
+    toast('保存しました');
+    if (done) done(res.d.value);
+  }).catch(function () { toast('通信できませんでした'); });
+}
+
+/* 文字の項目。押すと入力欄になり、離れると保存する */
+document.querySelectorAll('.ed[data-field]').forEach(function (el) {
+  el.addEventListener('click', function () {
+    if (el.querySelector('input')) return;
+    var was = el.dataset.value || '';
+    var i = document.createElement('input');
+    i.value = was;
+    i.style.width = '100%';
+    el.textContent = '';
+    el.appendChild(i);
+    i.focus();
+    var finish = function () {
+      var now = i.value.trim();
+      el.textContent = now || '—';
+      if (now === was) return;
+      patch(el.dataset.field, now, function (v) {
+        el.dataset.value = v;
+        el.textContent = v || '—';
+        el.classList.add('changed');
+      });
+    };
+    i.addEventListener('blur', finish);
+    i.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') i.blur();
+      if (e.key === 'Escape') { i.value = was; i.blur(); }
+    });
+  });
+});

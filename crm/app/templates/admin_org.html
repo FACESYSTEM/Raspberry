@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block title %}自社の情報{% endblock %}
+{% block content %}
+<p class="hint" style="margin-top:0">
+  <a href="{{ url_for('admin.index') }}">← 利用者・組織</a></p>
+<h2 style="margin-top:0">自社の情報</h2>
+<div class="card">
+  <div class="lead" style="margin:0">
+    <strong>会社名・住所・振込先など、自社そのものの情報</strong>です。
+    画面の見出しや、これから作る請求書の発行元に使います。
+    <strong>コードに埋めていません</strong>（別の組織へ土台を持っていけるように）。
+    <br>
+    請求書の保管フォルダが「株式会社計上」「合同会社計上」に分かれているため、
+    <strong>2法人ぶん持てるようにしてあります。</strong>
+  </div>
+</div>
+
+{% for o in orgs %}
+<div class="card">
+  <h3 style="margin-top:0">
+    {{ o.label }}
+    {% if o.is_display %}<span class="badge">画面に表示中</span>{% endif %}
+    {% if not o.in_use %}<span class="badge">いまは使っていない</span>{% endif %}
+  </h3>
+  {% if o.issues %}
+  <div class="notice" style="margin-bottom:12px">
+    <strong>請求書を出す前に埋めてください</strong>
+    <ul style="margin:6px 0 0 18px;padding:0">
+      {% for i in o.issues %}<li>{{ i }}</li>{% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+  <form method="post" action="{{ url_for('admin.org_update', oid=o.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="cols two">
+      <div class="fld"><label>名称</label><input name="name" value="{{ o.name or '' }}"></div>
+      <div class="fld"><label>電話</label><input name="tel" value="{{ o.tel or '' }}"></div>
+      <div class="fld"><label>郵便番号</label><input name="postal_code" value="{{ o.postal_code or '' }}" placeholder="810-0001"></div>
+      <div class="fld"><label>メール</label><input name="email" value="{{ o.email or '' }}"></div>
+    </div>
+    <div class="fld" style="grid-template-columns:110px 1fr">
+      <label>住所</label><input name="address" value="{{ o.address or '' }}">
+    </div>
+    {% if o.in_use %}
+    <h4>請求書に出るもの</h4>
+    <div class="fld" style="grid-template-columns:110px 1fr">
+      <label>登録番号</label>
+      <div><input name="invoice_reg_no" value="{{ o.invoice_reg_no or '' }}" placeholder="T1234567890123">
+      <div class="hint">適格請求書発行事業者の登録番号です。<strong>法人ごとに違います。</strong></div></div>
+    </div>
+    <div class="fld" style="grid-template-columns:110px 1fr">
+      <label>振込先</label>
+      <div><textarea name="bank" rows="2" placeholder="○○銀行 △△支店 普通 1234567 カ)アナタノジンジカ">{{ o.bank or '' }}</textarea>
+      <div class="hint"><strong>法人ごとに口座が違います。</strong>取り違えると入金されません。</div></div>
+    </div>
+    <div class="fld" style="grid-template-columns:110px 1fr">
+      <label>社印・ロゴ</label><input name="seal_url" value="{{ o.seal_url or '' }}" placeholder="https://...">
+    </div>
+    {% endif %}
+
+    {% if o.is_display %}
+    <h4>連絡が止まっている判定</h4>
+    <div class="fld" style="grid-template-columns:110px 1fr">
+      <label>既定の日数</label>
+      <div><input name="stale_days" value="{{ o.stale_days or '' }}" placeholder="60" style="width:90px">
+      <div class="hint">
+        最後に会話してからこの日数が過ぎた顧問先を「連絡が止まっている」として出します。
+        <strong>顧問先ごとに個別の日数も設定できます</strong>（顧問先の画面）。空欄なら60日。
+      </div></div>
+    </div>
+
+    <h4>契約更新の事前アラート</h4>
+    <div class="fld" style="grid-template-columns:110px 1fr">
+      <label>何日前から</label>
+      <div><input name="renew_notice_days" value="{{ o.renew_notice_days or '' }}"
+             placeholder="30" style="width:90px">
+      <div class="hint">
+        更新日までこの日数を切った顧問先を、ダッシュボードの
+        <strong>「まもなく契約更新」</strong>に出します。空欄なら30日。
+      </div></div>
+    </div>
+    {% endif %}
+    <div class="fld" style="grid-template-columns:110px 1fr">
+      <label>メモ</label><textarea name="note" rows="2">{{ o.note or '' }}</textarea>
+    </div>
+    {% if o.in_use and not o.is_display %}
+    <label class="hint" style="display:block;margin:10px 0">
+      <input type="checkbox" name="is_display" value="1" style="margin-right:6px">
+      画面の見出しにこの法人名を出す
+    </label>
+    {% endif %}
+    <div class="bar" style="margin-top:12px">
+      <button class="btn primary" type="submit">保存する</button>
+    </div>
+  </form>
+</div>
+{% endfor %}
+
+{% endblock %}

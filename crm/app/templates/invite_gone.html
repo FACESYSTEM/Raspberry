@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}この招待は使えません{% endblock %}
+{# **ログインしている人が開くこともある。**
+   その場合 `anon` は描かれないので、両方に置く。
+   片方だけにすると、中身の無いページが出る #}
+{% block content %}
+<div class="authbox">
+  {% include "_logo.html" %}
+  <div class="card">
+    <h2>このリンクは使えません</h2>
+    <p class="lead">
+      招待リンクは、<strong>一度パスワードを設定すると無効になります。</strong>
+      期限を過ぎた場合も同じです。
+    </p>
+
+    <h4 style="margin-top:18px">すでにパスワードを決めた覚えがある</h4>
+    <p>
+      設定はお済みです。<strong>このリンクはもう要りません。</strong>
+      ログイン画面から、メールアドレスとご自身で決めたパスワードでお入りください。
+    </p>
+    <a class="btn primary wide" href="{{ url_for('auth.login') }}"
+       style="margin-bottom:14px">ログイン画面へ</a>
+
+    <h4>まだ決めていない・パスワードが分からない</h4>
+    <p style="margin-bottom:0">
+      <strong>新しいリンクをお出しします。</strong>ご依頼ください。
+      このリンクを何度開いても、状況は変わりません。
+    </p>
+  </div>
+</div>
+{% endblock %}
+{% block anon %}
+<div class="authbox">
+  {% include "_logo.html" %}
+  <div class="card">
+    <h2>このリンクは使えません</h2>
+    <p class="lead">
+      招待リンクは、<strong>一度パスワードを設定すると無効になります。</strong>
+      期限を過ぎた場合も同じです。
+    </p>
+
+    <h4 style="margin-top:18px">すでにパスワードを決めた覚えがある</h4>
+    <p>
+      設定はお済みです。<strong>このリンクはもう要りません。</strong>
+      ログイン画面から、メールアドレスとご自身で決めたパスワードでお入りください。
+    </p>
+    <a class="btn primary wide" href="{{ url_for('auth.login') }}"
+       style="margin-bottom:14px">ログイン画面へ</a>
+
+    <h4>まだ決めていない・パスワードが分からない</h4>
+    <p style="margin-bottom:0">
+      <strong>新しいリンクをお出しします。</strong>ご依頼ください。
+      このリンクを何度開いても、状況は変わりません。
+    </p>
+  </div>
+</div>
+{% endblock %}

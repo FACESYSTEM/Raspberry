@@ -1,0 +1,23 @@
+# 既存の Caddyfile に**追記**する。既存のサイト設定は変更しない。
+#
+#   sudo cp deploy/Caddyfile.snippet /etc/caddy/conf.d/〈app〉.caddy
+#   sudo caddy validate --config /etc/caddy/Caddyfile
+#   sudo systemctl reload caddy
+#
+# conf.d を読む設定が無い場合は、/etc/caddy/Caddyfile の末尾に中身を貼る。
+#
+# **証明書は Caddy が自動で取る。**そのため 80/443 が開いている必要がある。
+
+# **古い名前も残す。**既に渡したリンクを切らさないため
+〈ホスト名〉, crm.〈example.com〉 {
+    encode zstd gzip
+
+    # アプリは 127.0.0.1 でしか待ち受けない。外からは Caddy 経由だけ
+    reverse_proxy 127.0.0.1:8010
+
+    log {
+        output file /var/log/caddy/〈app〉.log
+        # **業務データをログに出さない。**識別子までにする（設計指示書 §9.3）
+        format json
+    }
+}

@@ -1,0 +1,6 @@
+{% if FIXMODE_ON %}
+<script src="{{ url_for('fixmode.static', filename='fixmode.js') }}"
+        data-endpoint="{{ url_for('fixmode.add') }}"
+        data-can-close="{{ 1 if FIXMODE_CAN_CLOSE else 0 }}"
+        id="fixmodejs"></script>
+{% endif %}

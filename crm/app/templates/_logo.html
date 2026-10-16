@@ -1,0 +1,8 @@
+{# ロゴ。**明るい背景用と暗い背景用の2枚**を持ち、CSSで出し分ける。
+   1枚だけだと、どちらかのテーマで文字が消える #}
+<div class="logo">
+  <img class="on-light" src="{{ url_for('static', filename='logo-light.png') }}?v={{ STATIC_V }}"
+       alt="{{ ORG_NAME }}">
+  <img class="on-dark" src="{{ url_for('static', filename='logo-dark.png') }}?v={{ STATIC_V }}"
+       alt="{{ ORG_NAME }}">
+</div>

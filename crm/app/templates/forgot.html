@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}パスワードの再設定{% endblock %}
+{% block anon %}
+<div class="authbox">
+  {% include "_logo.html" %}
+  {% for m in get_flashed_messages() %}<div class="flash">{{ m }}</div>{% endfor %}
+  <div class="card">
+    <h2>パスワードの再設定</h2>
+    {% if can_mail %}
+    <p class="lead">
+      登録されているメールアドレスに、<strong>再設定のリンク</strong>をお送りします。
+    </p>
+    <form method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="authfld">
+        <label for="email">メールアドレス</label>
+        <input id="email" name="email" type="email" placeholder="メールアドレス"
+               autocomplete="username" required autofocus>
+      </div>
+      <button class="btn primary wide" type="submit">再設定のリンクを送る</button>
+    </form>
+    {% else %}
+    {# **届かないものを待たせない。**
+       メールの設定が済むまでは、押しても何も起きない。
+       「送りました」と出してしまうと、来ないメールを待つことになる #}
+    <p class="lead">
+      <strong>いまはメールの自動送信を設定していません。</strong>
+      ここからの再設定はできません。
+    </p>
+    <p>
+      お手数ですが、<strong>管理者（松本）に再設定をご依頼ください。</strong>
+      新しいリンクをお出しします。
+    </p>
+    <a class="btn primary wide" href="{{ url_for('auth.login') }}">ログイン画面へ</a>
+    {% endif %}
+  </div>
+  <div class="authfoot"><a href="{{ url_for('auth.login') }}">← ログインに戻る</a></div>
+</div>
+{% endblock %}

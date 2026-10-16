@@ -1,0 +1,32 @@
+# /etc/systemd/system/〈app〉.service
+#
+#   sudo cp deploy/〈app〉.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now 〈app〉
+#
+# 参照元アプリとは**別のユニット・別のユーザー・別のディレクトリ**にする（§0.2）。
+
+[Unit]
+Description=〈app〉 CRM (dev)
+After=network.target
+
+[Service]
+Type=simple
+User=〈appuser〉
+Group=〈appuser〉
+WorkingDirectory=/home/〈appuser〉/app
+Environment=PORT=8010
+Environment=WORKERS=2
+ExecStart=/home/〈appuser〉/app/deploy/start.sh
+Restart=on-failure
+RestartSec=5
+
+# 触れる範囲を狭める。壊れたときの被害を自分のディレクトリに閉じる
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/〈appuser〉/app/data /home/〈appuser〉/app/backups
+
+[Install]
+WantedBy=multi-user.target

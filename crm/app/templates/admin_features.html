@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}機能の公開{% endblock %}
+{% block content %}
+
+<div class="card">
+  <h2 style="margin-bottom:2px">機能の公開</h2>
+  <div class="lead">
+    <strong>この画面はマスターにだけ見えます。</strong>
+    非公開にした機能は、先方の画面から消えます。メニューから隠すだけでなく、
+    <strong>URLを直に開いても入れません。</strong>
+    <br>
+    作りかけを見せると、そこに指摘が集まって本題が進まなくなります。
+    <strong>確認してほしい順に、少しずつ公開してください。</strong>
+  </div>
+</div>
+
+<div class="card">
+  <div class="tblwrap">
+  <table>
+    <thead><tr><th>機能</th><th>いまの状態</th><th>先方に見えるか</th><th></th></tr></thead>
+    <tbody>
+    {% for f in rows %}
+      <tr>
+        <td>{{ FEATURE_LABEL.get(f.key, f.key) }}
+          <div class="hint">{{ f.key }}</div></td>
+        <td>{% if f.released %}<span class="badge">公開</span>
+            {% else %}<span class="badge warn">開発中</span>{% endif %}</td>
+        <td>{{ '見える' if f.released else '見えない' }}</td>
+        <td>
+          <form method="post" action="{{ url_for('admin.feature_toggle', fid=f.id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn" type="submit">
+              {{ '非公開にする' if f.released else '公開する' }}</button>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+
+<div class="card">
+  <h3>マスターには全部見えます</h3>
+  <div class="lead">
+    非公開にしても、<strong>マスター（開発側）の画面には出続けます。</strong>
+    確認しながら作るためです。先方の見え方を確かめたいときは、
+    管理者の役割を持つ別のアカウントでログインしてください。
+  </div>
+</div>
+
+{% endblock %}
