@@ -6,12 +6,9 @@
 <h2 style="margin-top:0">自社の情報</h2>
 <div class="card">
   <div class="lead" style="margin:0">
-    <strong>会社名・住所・振込先など、自社そのものの情報</strong>です。
-    画面の見出しや、これから作る請求書の発行元に使います。
-    <strong>コードに埋めていません</strong>（別の組織へ土台を持っていけるように）。
-    <br>
-    法人が2つある場合に備えて<strong>2法人ぶん持てます。</strong>
-    使わないほうは「いまは使っていない」にしておくと、未記入の警告が出なくなります。
+    <strong>店の名前・住所など、自社そのものの情報</strong>です。
+    <strong>名称は画面の左上に出ます。</strong>
+    コードに埋めていないので、ここで変えればすぐ画面に反映されます。
   </div>
 </div>
 
@@ -24,7 +21,7 @@
   </h3>
   {% if o.issues %}
   <div class="notice" style="margin-bottom:12px">
-    <strong>請求書を出す前に埋めてください</strong>
+    <strong>埋めてください</strong>
     <ul style="margin:6px 0 0 18px;padding:0">
       {% for i in o.issues %}<li>{{ i }}</li>{% endfor %}
     </ul>
@@ -41,22 +38,6 @@
     <div class="fld" style="grid-template-columns:110px 1fr">
       <label>住所</label><input name="address" value="{{ o.address or '' }}">
     </div>
-    {% if o.in_use %}
-    <h4>請求書に出るもの</h4>
-    <div class="fld" style="grid-template-columns:110px 1fr">
-      <label>登録番号</label>
-      <div><input name="invoice_reg_no" value="{{ o.invoice_reg_no or '' }}" placeholder="T1234567890123">
-      <div class="hint">適格請求書発行事業者の登録番号です。<strong>法人ごとに違います。</strong></div></div>
-    </div>
-    <div class="fld" style="grid-template-columns:110px 1fr">
-      <label>振込先</label>
-      <div><textarea name="bank" rows="2" placeholder="○○銀行 △△支店 普通 1234567 カ)アナタノジンジカ">{{ o.bank or '' }}</textarea>
-      <div class="hint"><strong>法人ごとに口座が違います。</strong>取り違えると入金されません。</div></div>
-    </div>
-    <div class="fld" style="grid-template-columns:110px 1fr">
-      <label>社印・ロゴ</label><input name="seal_url" value="{{ o.seal_url or '' }}" placeholder="https://...">
-    </div>
-    {% endif %}
 
     <div class="fld" style="grid-template-columns:110px 1fr">
       <label>メモ</label><textarea name="note" rows="2">{{ o.note or '' }}</textarea>

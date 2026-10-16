@@ -16,7 +16,7 @@ from ..models import (Assignment, Bottle, Cast, ChangeHistory, Choice,
                       Comment, Corp, Guest, Visit)
 from ..security import (can_edit, feature_required, is_master, is_owner,
                         role_required, scope_query)
-from ..timeutil import to_jst, utcnow
+from ..timeutil import today_jst, utcnow
 
 bp = Blueprint("main", __name__)
 
@@ -46,11 +46,6 @@ FIELD_LABEL = {
     "email": "メール", "address": "住所", "note": "備考",
     "registered_on": "登録日", "cast_no": "キャスト番号",
 }
-
-
-def today_jst() -> date:
-    """店の「今日」。**サーバーの時計（UTC）で日付を出すと、朝9時まで前の日になる。**"""
-    return to_jst(utcnow()).date()
 
 
 def _guests():
@@ -88,7 +83,7 @@ def _page() -> int:
 # ---------------------------------------------------------------- 値の読み方
 
 def parse_int(field: str, raw: str):
-    """数字の項目を読む。**空は「分からない」として None。**
+    """数字の項目を読む。**空は「未記録」として None。**
 
     範囲外は保存しない。誕生日の月に 13 が入ると、誕生月の一覧から黙って漏れる。
     """
@@ -137,16 +132,17 @@ def _birthday_ok(g: Guest) -> bool:
 def dashboard():
     """最初の画面。**今日気にすべきことを、探さずに出す。**
 
-    誕生月のゲスト・最近の来店・要確認の内訳。**合計だけでなく中身を出す**
-    （規約 §12）。要確認は種類ごとに数え、押すとその一覧に飛ぶ。
+    今日が誕生日・今月が誕生月のゲスト・最近の来店・要確認の内訳。
+    **合計だけでなく中身を出す**（規約 §12）。要確認は種類ごとに数え、
+    押すとその一覧に飛ぶ。
     """
     rows = [x for x in _guests().all() if not x.archived_at]
     issue_count = Counter(i for x in rows for i in x.issues)
     t = today_jst()
-    nxt = 1 if t.month == 12 else t.month + 1
-    births = sorted((x for x in rows if x.birth_month in (t.month, nxt)),
-                    key=lambda x: ((x.birth_month - t.month) % 12,
-                                   x.birth_day or 99))
+    today = [x for x in rows if x.is_birthday(t)]
+    month = sorted((x for x in rows if x.is_birth_month(t)
+                    and not x.is_birthday(t)),
+                   key=lambda x: (x.birth_day is None, x.birth_day or 0))
     since = t - timedelta(days=14)
     visits = sorted(((v, x) for x in rows for v in x.live_visits
                      if v.visited_on >= since),
@@ -154,9 +150,10 @@ def dashboard():
     return render_template(
         "dashboard.html", total=len(rows),
         issue_total=sum(1 for x in rows if x.issues),
-        issue_count=issue_count.most_common(), births=births,
-        month=t.month, next_month=nxt, visits=visits[:50],
-        visit_total=len(visits), since=since,
+        issue_count=issue_count.most_common(), today=t,
+        birthday_today=today, birth_month=month,
+        no_birthday=sum(1 for x in rows if not x.birth_month),
+        visits=visits[:50], visit_total=len(visits), since=since,
         # **マスターのときだけ引く。**画面に出ないものを毎回数えない
         recent=(ChangeHistory.query.order_by(ChangeHistory.created_at.desc())
                 .limit(10).all() if is_master() else []))
@@ -215,6 +212,16 @@ def guests():
     rows = [x for x in rows if bool(x.archived_at) == show_archived]
     if q:
         rows = [x for x in rows if _matches(x, q)]
+    # 誕生日で絞る。**今日が誕生日／今月が誕生月**（ダッシュボードから飛んでくる）
+    birth = request.args.get("birth")
+    birth = birth if birth in ("today", "month", "none") else ""
+    t = today_jst()
+    if birth == "today":
+        rows = [x for x in rows if x.is_birthday(t)]
+    elif birth == "month":
+        rows = [x for x in rows if x.is_birth_month(t)]
+    elif birth == "none":
+        rows = [x for x in rows if not x.birth_month]
     # 要確認は**種類でも絞れる**（ダッシュボードの内訳から飛んでくる）
     issue = (request.args.get("issue") or "").strip()
     if issue:
@@ -228,7 +235,8 @@ def guests():
     return render_template("guests_list.html", rows=rows, q=q, sort=sort,
                            dir=dir_, page=page, total=total,
                            per_page=PER_PAGE, archived=archived,
-                           show_archived=show_archived, issue=issue)
+                           show_archived=show_archived, issue=issue,
+                           birth=birth)
 
 
 @bp.route("/guests/<int:gid>")
@@ -348,6 +356,47 @@ def guest_patch(gid):
     return jsonify(ok=True, value=shown, history_id=h.id)
 
 
+@bp.route("/guests/<int:gid>/birthday", methods=["POST"])
+@login_required
+@feature_required("guests")
+def guest_birthday(gid):
+    """誕生日を聞いて入れる。**月・日・年をまとめて1回で保存する。**
+
+    1項目ずつ保存すると、月だけ直して日を直す前に「その月に無い日」で
+    断られる（4月31日など）。聞いたその場で入れられるよう、まとめて受ける。
+    **年は空でよい**（聞けないことが多い。今年の年で埋めない）。
+    """
+    if not can_edit():
+        abort(403)
+    x = _guest_or_404(gid)
+    try:
+        got = {f: parse_int(f, request.form.get(f) or "")
+               for f in ("birth_month", "birth_day", "birth_year")}
+    except ValueError as e:
+        flash(f"誕生日：{e}")
+        return redirect(url_for("main.guest_detail", gid=gid))
+    if got["birth_day"] and not got["birth_month"]:
+        flash("誕生日：日だけでは入れられません。月も入れてください。")
+        return redirect(url_for("main.guest_detail", gid=gid))
+    try:
+        date(got["birth_year"] or 2000, got["birth_month"] or 1,
+             got["birth_day"] or 1)
+    except ValueError:
+        flash("誕生日：その月にない日です。")
+        return redirect(url_for("main.guest_detail", gid=gid))
+    changed = 0
+    for f, new in got.items():
+        old = getattr(x, f)
+        if old != new:
+            setattr(x, f, new)
+            ChangeHistory.record("guest", x.id, FIELD_LABEL[f], old, new,
+                                 current_user.id)
+            changed += 1
+    db.session.commit()
+    flash("誕生日を保存しました。" if changed else "誕生日は変わっていません。")
+    return redirect(url_for("main.guest_detail", gid=gid))
+
+
 @bp.route("/guests/<int:gid>/archive", methods=["POST"])
 @login_required
 @feature_required("guests")
@@ -370,7 +419,7 @@ def guest_archive(gid):
 @login_required
 @feature_required("guests")
 def guest_no_cast(gid):
-    """「担当なし」を確かめた／取り消す。**分からないと区別する**（規約 §7.3）。"""
+    """「担当なし」を確かめた／取り消す。**不明と区別する**（規約 §7.3）。"""
     if not can_edit():
         abort(403)
     x = _guest_or_404(gid)
@@ -379,8 +428,8 @@ def guest_no_cast(gid):
         return redirect(url_for("main.guest_detail", gid=gid))
     x.no_cast = not x.no_cast
     ChangeHistory.record("guest", x.id, "担当",
-                         "分からない" if x.no_cast else "担当なし",
-                         "担当なし" if x.no_cast else "分からない",
+                         "不明" if x.no_cast else "担当なし",
+                         "担当なし" if x.no_cast else "不明",
                          current_user.id)
     db.session.commit()
     return redirect(url_for("main.guest_detail", gid=gid))

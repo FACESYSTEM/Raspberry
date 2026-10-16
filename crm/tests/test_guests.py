@@ -91,15 +91,15 @@ class Test導いて出す:
             # **消してはいない**
             assert _db.session.get(Visit, vid) is not None
 
-    def test_来店の記録が無いことを来ていないと書かない(self, as_staff, app):
+    def test_来店が無ければ記録なしと出す(self, as_staff, app):
         with app.app_context():
             gid = _g().id
         body = as_staff.get(f"/guests/{gid}").get_data(as_text=True)
-        assert "来店の記録はありません" in body
+        assert "記録なし" in body
 
 
 class Test誕生日:
-    """**年は分からないことが多い。**Notion では76件すべて2026年だった"""
+    """**年は聞けないことが多い。**Notion では76件すべて2026年だった"""
 
     def test_年が無くても月日は持てる(self, as_staff, app):
         with app.app_context():
@@ -130,9 +130,9 @@ class Test誕生日:
             gid = _g(birth_month=2).id
         assert _patch(as_staff, gid, "birth_day", "29").status_code == 200
 
-    def test_日が分からないと要確認(self, app, db):
+    def test_日が未記録なら要確認(self, app, db):
         x = _g(birth_month=1)
-        assert "誕生日の日が分からない" in x.issues
+        assert "誕生日の日が未記録" in x.issues
 
     def test_誕生月はダッシュボードに出る(self, as_staff, app):
         t = today_jst()
@@ -143,13 +143,121 @@ class Test誕生日:
         assert "誕生月の人" in body and "別の月の人" not in body
 
 
-class Test担当:
-    """**「担当なし」と「分からない」を分ける**（規約 §7.3）"""
+class Test誕生月と誕生日:
+    """**今日が誕生日・今月が誕生月のゲストが分かる**"""
 
-    def test_記録が無ければ分からない(self, app, db):
+    def test_今日が誕生日はダッシュボードの一番上(self, as_staff, app):
+        t = today_jst()
+        with app.app_context():
+            _g("今日の人", birth_month=t.month, birth_day=t.day)
+        body = as_staff.get("/").get_data(as_text=True)
+        head = body[body.index("今日が誕生日"):body.index("が誕生月")]
+        assert "今日の人" in head
+
+    def test_年が未記録でも今日が誕生日と分かる(self, app, db):
+        t = today_jst()
+        x = _g(birth_month=t.month, birth_day=t.day)
+        assert x.birth_year is None and x.is_birthday(t)
+        assert x.birth_badge == "今日が誕生日"
+
+    def test_日が未記録でも誕生月とは分かる(self, app, db):
+        t = today_jst()
+        x = _g(birth_month=t.month)
+        assert x.is_birth_month(t) and not x.is_birthday(t)
+        assert x.birth_badge == "誕生月"
+
+    def test_2月29日生まれはうるう年でなければ28日に知らせる(self, app, db):
+        x = _g(birth_month=2, birth_day=29)
+        assert x.is_birthday(date(2027, 2, 28))
+        assert not x.is_birthday(date(2028, 2, 28))
+        assert x.is_birthday(date(2028, 2, 29))
+
+    def test_一覧で今日が誕生日だけに絞れる(self, as_staff, app):
+        t = today_jst()
+        other = 1 if t.day != 1 else 2
+        with app.app_context():
+            _g("今日の人", birth_month=t.month, birth_day=t.day)
+            _g("今月の人", birth_month=t.month, birth_day=other)
+        body = as_staff.get("/guests?birth=today").get_data(as_text=True)
+        assert "今日の人" in body and "今月の人" not in body
+        body = as_staff.get("/guests?birth=month").get_data(as_text=True)
+        assert "今日の人" in body and "今月の人" in body
+
+    def test_一覧に印が出る(self, as_staff, app):
+        t = today_jst()
+        with app.app_context():
+            _g("今日の人", birth_month=t.month, birth_day=t.day)
+        assert "今日が誕生日</span>" in as_staff.get("/guests").get_data(as_text=True)
+
+    def test_一覧で誕生日が未記録だけに絞れる(self, as_staff, app):
+        """**聞きに行く相手を探せる**"""
+        with app.app_context():
+            _g("聞けていない人")
+            _g("聞けた人", birth_month=1, birth_day=1)
+        body = as_staff.get("/guests?birth=none").get_data(as_text=True)
+        assert "聞けていない人" in body and "聞けた人" not in body
+
+
+class Test誕生日を聞いて入れる:
+    """**月・日・年をまとめて1回で保存する**"""
+
+    def _post(self, cl, gid, m="", d="", y=""):
+        return cl.post(f"/guests/{gid}/birthday",
+                       data={"birth_month": m, "birth_day": d, "birth_year": y})
+
+    def test_月日だけで入れられる(self, as_staff, app):
+        with app.app_context():
+            gid = _g().id
+        self._post(as_staff, gid, "4", "8")
+        with app.app_context():
+            x = _db.session.get(Guest, gid)
+            assert (x.birth_month, x.birth_day, x.birth_year) == (4, 8, None)
+
+    def test_まとめてなら途中の状態で断られない(self, as_staff, app):
+        """1項目ずつだと、4月30日→5月31日の直しが「4月31日」で断られる"""
+        with app.app_context():
+            gid = _g(birth_month=4, birth_day=30).id
+        self._post(as_staff, gid, "5", "31")
+        with app.app_context():
+            x = _db.session.get(Guest, gid)
+            assert (x.birth_month, x.birth_day) == (5, 31)
+
+    def test_暦に無い日は入れない(self, as_staff, app):
+        with app.app_context():
+            gid = _g().id
+        self._post(as_staff, gid, "4", "31")
+        with app.app_context():
+            assert _db.session.get(Guest, gid).birth_month is None
+
+    def test_日だけは入れない(self, as_staff, app):
+        with app.app_context():
+            gid = _g().id
+        self._post(as_staff, gid, "", "8")
+        with app.app_context():
+            assert _db.session.get(Guest, gid).birth_day is None
+
+    def test_変えた項目だけ履歴に残る(self, as_staff, app):
+        with app.app_context():
+            gid = _g(birth_month=4).id
+        self._post(as_staff, gid, "4", "8")
+        with app.app_context():
+            hs = ChangeHistory.query.filter_by(entity_type="guest").all()
+            assert [h.field for h in hs] == ["誕生日（日）"]
+
+    def test_スタッフも入れられる(self, as_staff, app):
+        """**聞くのは店に出ている人。**管理者だけにしない"""
+        with app.app_context():
+            gid = _g().id
+        assert self._post(as_staff, gid, "1", "1").status_code == 302
+
+
+class Test担当:
+    """**「担当なし」と「不明」を分ける**（規約 §7.3）"""
+
+    def test_記録が無ければ不明(self, app, db):
         x = _g()
         assert x.cast_state == "unknown"
-        assert "担当が分からない" in x.issues
+        assert "担当が不明" in x.issues
 
     def test_担当なしを確かめたら要確認から外れる(self, as_staff, app):
         with app.app_context():
@@ -157,7 +265,7 @@ class Test担当:
         as_staff.post(f"/guests/{gid}/no_cast")
         with app.app_context():
             x = _db.session.get(Guest, gid)
-            assert x.cast_state == "none" and "担当が分からない" not in x.issues
+            assert x.cast_state == "none" and "担当が不明" not in x.issues
 
     def test_担当を付けられる(self, as_staff, app):
         with app.app_context():
@@ -315,7 +423,7 @@ class Testインライン編集:
         with app.app_context():
             assert _db.session.get(Guest, gid).guest_no == 1592
 
-    def test_空にすると分からないに戻る(self, as_staff, app):
+    def test_空にすると未記録に戻る(self, as_staff, app):
         with app.app_context():
             gid = _g(birth_month=4).id
         _patch(as_staff, gid, "birth_month", "")
@@ -414,7 +522,7 @@ class Test一覧の作法:
         with app.app_context():
             _g(guest_no=None)
         body = as_staff.get("/").get_data(as_text=True)
-        assert "番号なし" in body and "担当が分からない" in body
+        assert "番号なし" in body and "担当が不明" in body
 
     def test_降順でも空は最後(self, as_staff, app):
         """**向きを変えたら空が先頭に来た**、を起こさない"""

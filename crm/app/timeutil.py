@@ -25,6 +25,14 @@ def utcnow() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
+def today_jst():
+    """店の「今日」。**サーバーの時計（UTC）で日付を出すと、朝9時まで前の日になる。**
+
+    誕生日・来店日はこれで判定する。
+    """
+    return datetime.now(JST).date()
+
+
 def to_jst(dt):
     """タイムゾーン無しのUTC → JST。**Noneはそのまま返す**（未設定は正常な状態）。
 

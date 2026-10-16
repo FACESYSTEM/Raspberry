@@ -292,17 +292,7 @@ def org_update(oid):
                                  "使っている" if new else "使っていない",
                                  current_user.id)
             o.in_use = new
-    for f in ("stale_days", "renew_notice_days"):
-        if f not in request.form:
-            continue
-        raw = (request.form.get(f) or "").strip()
-        new = int(raw) if raw.isdigit() and int(raw) > 0 else None
-        if getattr(o, f) != new:
-            ChangeHistory.record("org", o.id, f, getattr(o, f), new,
-                                 current_user.id)
-            setattr(o, f, new)
-    for f in ("name", "postal_code", "address", "tel", "email",
-              "invoice_reg_no", "bank", "seal_url", "note"):
+    for f in ("name", "postal_code", "address", "tel", "email", "note"):
         # **送られてこなかった項目は触らない。**
         # 触ると、フォームの一部だけを送っただけで他の値が消える（土台 §4.4）
         if f not in request.form:

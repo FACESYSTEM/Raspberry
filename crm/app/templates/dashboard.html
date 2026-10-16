@@ -10,26 +10,47 @@
   </div>
 </div>
 
+{% macro who(x) %}{% if feature_open('guests') %}<a href="{{ url_for('main.guest_detail', gid=x.id) }}">{{ x.label }}</a>{% else %}{{ x.label }}{% endif %}{% endmacro %}
+{% macro casts(x) %}{% for a in x.active_assignments %}{{ a.cast.name }}{{ '、' if not loop.last }}{% else %}{{ '担当なし' if x.no_cast else '不明' }}{% endfor %}{% endmacro %}
+
+{# **今日が誕生日を一番上に。**当日に気づけないと意味がない #}
 <div class="card">
-  <h3 style="margin-bottom:2px">誕生日　{{ month }}月・{{ next_month }}月　{{ births|length }}件</h3>
-  <div class="hint" style="margin-bottom:10px">
-    誕生日の月が分かっているゲストだけです。<strong>年は分からないことが多い</strong>ので、年齢は年が分かるときだけ出します。
-  </div>
-  {% if births %}
+  <h3 style="margin-bottom:2px">今日が誕生日　{{ birthday_today|length }}件
+    <span class="hint" style="font-weight:normal">（{{ today.month }}月{{ today.day }}日）</span></h3>
+  {% if birthday_today %}
   <div class="tblwrap"><table>
-    <thead><tr><th>誕生日</th><th>ゲスト</th><th>担当</th></tr></thead>
+    <thead><tr><th>ゲスト</th><th>誕生日</th><th>担当</th><th>最終来店</th></tr></thead>
     <tbody>
-    {% for x in births %}
-      <tr>
+    {% for x in birthday_today %}
+      <tr><td><span class="badge warn">今日が誕生日</span> {{ who(x) }}</td>
         <td>{{ x.birthday_text }}{% if x.age is not none %}（{{ x.age }}歳）{% endif %}</td>
-        <td>{% if feature_open('guests') %}<a href="{{ url_for('main.guest_detail', gid=x.id) }}">{{ x.label }}</a>{% else %}{{ x.label }}{% endif %}</td>
-        <td>{% for a in x.active_assignments %}{{ a.cast.name }}{{ '、' if not loop.last }}{% else %}
-          {{ '担当なし' if x.no_cast else '分からない' }}{% endfor %}</td>
-      </tr>
+        <td>{{ casts(x) }}</td>
+        <td>{{ x.last_visit_on.strftime('%Y-%m-%d') if x.last_visit_on else '記録なし' }}</td></tr>
     {% endfor %}
     </tbody>
   </table></div>
-  {% else %}<div class="hint">この2か月に誕生日のゲストはいません（誕生日の記録があるゲストの中で）。</div>{% endif %}
+  {% else %}<div class="hint">今日が誕生日のゲストはいません（誕生日を記録しているゲストの中で）。</div>{% endif %}
+</div>
+
+<div class="card">
+  <h3 style="margin-bottom:2px">{{ today.month }}月が誕生月　{{ birth_month|length }}件</h3>
+  <div class="hint" style="margin-bottom:10px">
+    今日が誕生日のゲストは上に出しています。誕生日が未記録のゲストは {{ "{:,}".format(no_birthday) }}件
+    {% if feature_open('guests') and no_birthday %}（<a href="{{ url_for('main.guests', birth='none') }}">一覧</a>）{% endif %}。
+    <strong>聞けたら、ゲストの画面の「誕生日」から入れてください。</strong>
+  </div>
+  {% if birth_month %}
+  <div class="tblwrap"><table>
+    <thead><tr><th>誕生日</th><th>ゲスト</th><th>担当</th><th>最終来店</th></tr></thead>
+    <tbody>
+    {% for x in birth_month %}
+      <tr><td>{{ x.birthday_text }}{% if x.age is not none %}（{{ x.age }}歳）{% endif %}</td>
+        <td>{{ who(x) }}</td><td>{{ casts(x) }}</td>
+        <td>{{ x.last_visit_on.strftime('%Y-%m-%d') if x.last_visit_on else '記録なし' }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}<div class="hint">今月が誕生月のゲストは、ほかにいません。</div>{% endif %}
 </div>
 
 <div class="card">
@@ -46,7 +67,7 @@
     {% endfor %}
     </tbody>
   </table></div>
-  {% else %}<div class="hint">この2週間の来店の記録はありません。</div>{% endif %}
+  {% else %}<div class="hint">この2週間の来店は記録なし。</div>{% endif %}
 </div>
 
 {# **汚れているものを消さず、「要確認」として出す**（土台 §4.1）。

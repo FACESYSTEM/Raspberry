@@ -16,7 +16,7 @@ from flask_login import UserMixin
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from .extensions import db, login_manager
-from .timeutil import utcnow
+from .timeutil import today_jst, utcnow
 
 
 @login_manager.user_loader
@@ -124,21 +124,18 @@ class Comment(db.Model):
     author = db.relationship("User")
 
 
-# 自社の法人。**1つから始める。**
-# 請求の計上先が分かれている会社では、ここに足して使い分ける
-# （実案件では、請求書の保管フォルダが2法人に分かれていた）。
+# 自社（店）。**1つから始める。**
+# ひな形は請求書の発行元を2法人で出し分けるために2つ持っていたが、
+# この店では請求書を作らないので1つにした。複数要るときはここに足す。
 # **コードに社名を埋めない。**画面から直せるようにしておく
-COMPANIES = ("main", "sub")
-COMPANY_LABEL = {"main": "自社", "sub": "別法人"}
+COMPANIES = ("main",)
+COMPANY_LABEL = {"main": "自社"}
 
 
 class OrgProfile(db.Model):
-    """自社の情報。**法人ごとに1行。**
+    """自社の情報。**法人ごとに1行**（いまは店の1行だけ）。
 
-    請求書の保管フォルダが「株式会社計上」「合同会社計上」に分かれており、
-    **法人が2つある。**1行しか持てないと、請求書の発行元を出し分けられない。
-
-    会社名・住所・ロゴのように**コードに埋めたくなるもの**をここに置く
+    会社名・住所のように**コードに埋めたくなるもの**をここに置く
     （設計指示書 §10.2）。埋めると別の組織へ持っていくときに書き換えて回ることになる。
 
     **画面に出す名前もここから取る。**`.env` と二重に持つと、
@@ -147,7 +144,7 @@ class OrgProfile(db.Model):
     __tablename__ = "org_profile"
 
     id = db.Column(db.Integer, primary_key=True)
-    code = db.Column(db.String(10), index=True)       # kk / gk（規約 §7.3）
+    code = db.Column(db.String(10), index=True)       # main
     name = db.Column(db.String(200))
     # **画面の見出しに出す法人。**1つだけ true にする
     is_display = db.Column(db.Boolean, nullable=False, default=False)
@@ -155,40 +152,26 @@ class OrgProfile(db.Model):
     address = db.Column(db.String(300))
     tel = db.Column(db.String(50))
     email = db.Column(db.String(255))
-    # 請求書に要るもの。**請求を作る前に埋まっていないと出せない**
-    invoice_reg_no = db.Column(db.String(40))         # 適格請求書発行事業者の登録番号
-    bank = db.Column(db.String(300))                  # 振込先
-    seal_url = db.Column(db.String(500))              # 社印・ロゴ
-    # 連絡が途切れたと見なす日数の組織既定。**画面から変えられるようにする**
-    stale_days = db.Column(db.Integer)
-    # 契約更新の何日前から知らせるか。**過ぎてから気づくのでは遅い**（要望 §2-1）
-    renew_notice_days = db.Column(db.Integer)
+    # ひな形にあった請求書の項目（登録番号・振込先・社印）と、連絡が止まっている
+    # 判定・契約更新の日数は外した。**使わない列は必ず死ぬ**（規約 §8.5）
     # いま使っている法人か。**使っていない法人の要確認を出し続けない。**
     # 消えない警告は読まれなくなり、本当に見てほしいものまで埋もれる（土台 §3.4）。
-    # ただし**行そのものは消さない。**過去の請求書の発行元を表示するのに要る
+    # ただし**行そのものは消さない。**変更履歴が指している
     in_use = db.Column(db.Boolean, nullable=False, default=True)
     note = db.Column(db.Text)
     updated_at = db.Column(db.DateTime, default=utcnow, onupdate=utcnow)
 
     @staticmethod
-    def renew_notice() -> int:
-        """契約更新の何日前から知らせるか。**表が無くても落とさない。**"""
-        try:
-            got = OrgProfile.display()
-            if got and got.renew_notice_days:
-                return got.renew_notice_days
-        except Exception:                       # noqa: BLE001
-            pass
-        return RENEW_NOTICE_DAYS
-
-    @staticmethod
     def all_companies() -> list:
-        """2法人ぶん。**無ければ作る**（画面から編集できるように）。"""
-        for code, label in COMPANY_LABEL.items():
+        """定義した法人ぶん。**無ければ作る**（画面から編集できるように）。
+
+        **名前は空で作る。**「自社」のような仮の名前を入れると、未記入に
+        気づけないまま画面の見出しに「自社」と出続ける。
+        """
+        for code in COMPANIES:
             if not OrgProfile.query.filter_by(code=code).first():
                 db.session.add(OrgProfile(
-                    code=code, name=label,
-                    is_display=(code == COMPANIES[0])))
+                    code=code, is_display=(code == COMPANIES[0])))
         db.session.commit()
         return (OrgProfile.query.order_by(OrgProfile.code.desc()).all())
 
@@ -209,23 +192,14 @@ class OrgProfile(db.Model):
 
     @property
     def issues(self) -> list:
-        """請求書を出す前に埋まっている必要があるもの。**消さずに見せる。**
+        """埋まっていないもの。**画面の見出しに出す名前だけ。**
 
-        使っていない法人には出さない。**直しようのない警告は、
-        出し続けるほど全体が読まれなくなる。**
+        住所などは無くても困らないので警告しない。**直さなくても困らない
+        警告は、出し続けるほど全体が読まれなくなる。**
         """
         if not self.in_use:
             return []
-        got = []
-        if not self.name:
-            got.append("名称が未記入")
-        if not self.address:
-            got.append("住所が未記入")
-        if not self.invoice_reg_no:
-            got.append("適格請求書発行事業者の登録番号が未記入")
-        if not self.bank:
-            got.append("振込先が未記入")
-        return got
+        return [] if self.name else ["名称が未記入"]
 
 
 class ApiKey(db.Model):
@@ -445,7 +419,8 @@ class Guest(db.Model):
     corp_id = db.Column(db.Integer, db.ForeignKey("corps.id"), index=True)
     title = db.Column(db.String(120))
     neck_name = db.Column(db.String(120))
-    # **年は分からないことが多い**（規約 §7.2）。分からなければ空のまま
+    # **聞いて入れる**（規約 §7.2）。聞けていなければ空＝未記録。
+    # 年は聞けないことが多いので、月日だけでも入れられる
     birth_year = db.Column(db.Integer)
     birth_month = db.Column(db.Integer)
     birth_day = db.Column(db.Integer)
@@ -488,7 +463,7 @@ class Guest(db.Model):
 
     @property
     def cast_state(self) -> str:
-        """担当の状態。`has`（いる）・`none`（いないと確かめた）・`unknown`。"""
+        """担当の状態。`has`（いる）・`none`（いないと確かめた）・`unknown`（不明）。"""
         if self.active_assignments:
             return "has"
         return "none" if self.no_cast else "unknown"
@@ -499,12 +474,37 @@ class Guest(db.Model):
 
     @property
     def birthday_text(self) -> str:
-        """誕生日の表示。**分からない部分は書かない**（年を今年で埋めない）。"""
+        """誕生日の表示。**聞けていない部分は書かない**（年を今年で埋めない）。"""
         if not self.birth_month:
             return ""
         md = f"{self.birth_month}月{self.birth_day}日" if self.birth_day \
-            else f"{self.birth_month}月（日は分からない）"
+            else f"{self.birth_month}月（日は未記録）"
         return f"{self.birth_year}年{md}" if self.birth_year else md
+
+    def is_birthday(self, today=None) -> bool:
+        """今日が誕生日か。**年は見ない**（年が未記録でも分かる）。
+
+        2月29日生まれは、うるう年でない年は2月28日に知らせる。
+        知らせないと、4年に3回は誕生日に気づけない。
+        """
+        t = today or today_jst()
+        if not (self.birth_month and self.birth_day):
+            return False
+        if (self.birth_month, self.birth_day) == (2, 29) and not _leap(t.year):
+            return (t.month, t.day) == (2, 28)
+        return (self.birth_month, self.birth_day) == (t.month, t.day)
+
+    def is_birth_month(self, today=None) -> bool:
+        """今月が誕生月か。**日が未記録でも月が分かれば出す。**"""
+        t = today or today_jst()
+        return self.birth_month == t.month
+
+    @property
+    def birth_badge(self) -> str:
+        """一覧・詳細に出す印。**今日が誕生日**を誕生月より先に出す。"""
+        if self.is_birthday():
+            return "今日が誕生日"
+        return "誕生月" if self.is_birth_month() else ""
 
     @property
     def age(self):
@@ -526,10 +526,14 @@ class Guest(db.Model):
         if not self.name and not self.kana:
             got.append("名前なし")
         if self.cast_state == "unknown":
-            got.append("担当が分からない")
+            got.append("担当が不明")
         if self.birth_month and not self.birth_day:
-            got.append("誕生日の日が分からない")
+            got.append("誕生日の日が未記録")
         return got
+
+
+def _leap(y: int) -> bool:
+    return y % 4 == 0 and (y % 100 != 0 or y % 400 == 0)
 
 
 def duplicate_guest_nos() -> set:

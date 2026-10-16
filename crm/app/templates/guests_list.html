@@ -3,7 +3,7 @@
 {% macro th(key, label, cls='') %}
   {% set d = 'desc' if (sort == key and dir == 'asc') else 'asc' %}
   <th class="{{ cls }}"><a href="{{ url_for('main.guests', q=q, sort=key, dir=d,
-                          issues=request.args.get('issues'), issue=issue or None,
+                          issues=request.args.get('issues'), issue=issue or None, birth=birth or None,
                           archived=request.args.get('archived')) }}">
     {{ label }}{% if sort == key %}{{ ' ▲' if dir == 'asc' else ' ▼' }}{% endif %}</a></th>
 {% endmacro %}
@@ -11,18 +11,21 @@
 <div class="card">
   <div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap">
     <h2 style="margin:0">ゲスト</h2>
-    <span class="hint">{{ "{:,}".format(total) }}件{% if issue %}（要確認：{{ issue }}）{% endif %}</span>
+    <span class="hint">{{ "{:,}".format(total) }}件{% if issue %}（要確認：{{ issue }}）{% endif %}{% if birth %}（{{ {'today': '今日が誕生日', 'month': '今月が誕生月', 'none': '誕生日が未記録'}[birth] }}）{% endif %}</span>
     <form style="margin-left:auto;display:flex;gap:6px" method="get">
       <input name="q" value="{{ q }}" placeholder="名前・番号・法人・ボトル・キャスト">
       <button class="btn" type="submit">探す</button>
     </form>
   </div>
   <div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap">
-    <a class="btn {{ 'active' if not request.args.get('issues') and not issue and not show_archived }}"
+    <a class="btn {{ 'active' if not request.args.get('issues') and not issue and not show_archived and not birth }}"
        href="{{ url_for('main.guests', q=q) }}">すべて</a>
     {# **汚れているデータを消さず、ここに出す。**正しさは検出で担保する #}
     <a class="btn {{ 'active' if request.args.get('issues') or issue }}"
        href="{{ url_for('main.guests', q=q, issues=1) }}">要確認だけ</a>
+    <a class="btn {{ 'active' if birth == 'today' }}" href="{{ url_for('main.guests', q=q, birth='today') }}">今日が誕生日</a>
+    <a class="btn {{ 'active' if birth == 'month' }}" href="{{ url_for('main.guests', q=q, birth='month') }}">今月が誕生月</a>
+    <a class="btn {{ 'active' if birth == 'none' }}" href="{{ url_for('main.guests', q=q, birth='none') }}">誕生日が未記録</a>
     {% if archived %}
     <a class="btn {{ 'active' if show_archived }}"
        href="{{ url_for('main.guests', q=q, archived=1 if not show_archived else None) }}">
@@ -42,13 +45,14 @@
     {% for x in rows %}
       <tr{% if x.archived_at %} style="opacity:.55"{% endif %}>
         <td class="num">{{ 'Gu_%d'|format(x.guest_no) if x.guest_no is not none else '番号なし' }}</td>
-        <td><a href="{{ url_for('main.guest_detail', gid=x.id) }}">{{ x.name or '（名前なし）' }}</a></td>
+        <td><a href="{{ url_for('main.guest_detail', gid=x.id) }}">{{ x.name or '（名前なし）' }}</a>
+          {% if x.birth_badge %}<span class="badge warn">{{ x.birth_badge }}</span>{% endif %}</td>
         <td>{{ x.kana or '' }}</td>
         <td>{{ x.corp.name if x.corp else '' }}</td>
         <td>{% for a in x.active_assignments %}{{ a.cast.name }}{% if a.level %}（{{ a.level }}）{% endif %}{{ '、' if not loop.last }}{% else %}
-          <span class="hint">{{ '担当なし' if x.no_cast else '分からない' }}</span>{% endfor %}</td>
+          <span class="hint">{{ '担当なし' if x.no_cast else '不明' }}</span>{% endfor %}</td>
         <td>{% for b in x.keeping_bottles %}{{ b.label }}{{ '、' if not loop.last }}{% endfor %}</td>
-        <td>{{ x.last_visit_on.strftime('%Y-%m-%d') if x.last_visit_on else '' }}</td>
+        <td>{% if x.last_visit_on %}{{ x.last_visit_on.strftime('%Y-%m-%d') }}{% else %}<span class="hint">記録なし</span>{% endif %}</td>
         <td>{% for i in x.issues %}<span class="badge warn">{{ i }}</span> {% endfor %}</td>
       </tr>
     {% else %}
@@ -56,12 +60,12 @@
     {% endfor %}
     </tbody>
   </table>
-  <p class="hint" style="margin:8px 0 0">最終来店が空のゲストは<b>来店の記録が無い</b>だけで、来ていないとは限りません。</p>
+  <p class="hint" style="margin:8px 0 0">最終来店が「記録なし」のゲストは、<b>来ていないとは限りません</b>（記録が無いだけ）。</p>
 </div>
 
 {% if total > per_page %}
 <div class="card" style="display:flex;gap:8px;align-items:center">
-  {% set keep = dict(q=q, sort=sort, dir=dir, issues=request.args.get('issues'), issue=issue or None, archived=request.args.get('archived')) %}
+  {% set keep = dict(q=q, sort=sort, dir=dir, issues=request.args.get('issues'), issue=issue or None, birth=birth or None, archived=request.args.get('archived')) %}
   {% if page > 1 %}<a class="btn" href="{{ url_for('main.guests', page=page-1, **keep) }}">前</a>{% endif %}
   <span class="hint">{{ page }} / {{ (total + per_page - 1) // per_page }}</span>
   {% if page * per_page < total %}<a class="btn" href="{{ url_for('main.guests', page=page+1, **keep) }}">次</a>{% endif %}

@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block title %}{{ x.label }}{% endblock %}
-{# 押すと直せる項目。**空のときの書き方を項目ごとに決める**（「未記録」と「分からない」は違う） #}
+{# 押すと直せる項目。**空のときの書き方を項目ごとに決める**（「未記録」「不明」「記録なし」） #}
 {% macro ed(field, value, label, empty='未記録', hint='') %}
   <div class="field"><label>{{ label }}</label>
     <div>
@@ -35,17 +35,35 @@
   {{ ed('title', x.title, '役職') }}
   {{ ed('neck_name', x.neck_name, 'ネック名') }}
   {{ ed('note', x.note, '備考', 'なし') }}
-  {{ ed('registered_on', x.registered_on.isoformat() if x.registered_on else none, '登録日', '分からない', '2026-10-16 の形で入れます') }}
+  {{ ed('registered_on', x.registered_on.isoformat() if x.registered_on else none, '登録日', '不明', '2026-10-16 の形で入れます') }}
 </div>
 
-<div class="card">
-  <h3 style="margin-top:0">誕生日</h3>
-  <p class="hint" style="margin-top:0">
-    {% if x.birthday_text %}<b>{{ x.birthday_text }}</b>{% if x.age is not none %}（{{ x.age }}歳）{% endif %}。{% endif %}
-    <b>年が分からないときは空のままにしてください。</b>今年の年で埋めると、年齢がでたらめになります。</p>
-  {{ ed('birth_month', x.birth_month, '月', '分からない') }}
-  {{ ed('birth_day', x.birth_day, '日', '分からない') }}
-  {{ ed('birth_year', x.birth_year, '年', '分からない') }}
+{# **聞いて入れる。**月・日・年をまとめて1回で保存する（1項目ずつだと
+   4月31日のような途中の状態で断られる）。年は聞けないことが多いので空でよい #}
+<div class="card" id="birthday">
+  <h3 style="margin-top:0">誕生日
+    {% if x.birth_badge %}<span class="badge warn">{{ x.birth_badge }}</span>{% endif %}</h3>
+  <p style="margin-top:0">
+    {% if x.birthday_text %}<b>{{ x.birthday_text }}</b>{% if x.age is not none %}（{{ x.age }}歳）{% endif %}
+    {% else %}<b>未記録</b>　<span class="hint">ゲストに聞けたら入れてください。</span>{% endif %}</p>
+  {% if can_edit() %}
+  <form method="post" action="{{ url_for('main.guest_birthday', gid=x.id) }}"
+        style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <select name="birth_month" aria-label="月">
+      <option value="">月（未記録）</option>
+      {% for m in range(1, 13) %}<option value="{{ m }}" {{ 'selected' if x.birth_month == m }}>{{ m }}月</option>{% endfor %}
+    </select>
+    <select name="birth_day" aria-label="日">
+      <option value="">日（未記録）</option>
+      {% for d in range(1, 32) %}<option value="{{ d }}" {{ 'selected' if x.birth_day == d }}>{{ d }}日</option>{% endfor %}
+    </select>
+    <input name="birth_year" inputmode="numeric" placeholder="年（分かれば）" style="width:130px"
+           value="{{ x.birth_year or '' }}" aria-label="年">
+    <button class="btn primary" type="submit">誕生日を保存</button>
+  </form>
+  <p class="hint" style="margin-bottom:0"><b>年は聞けなければ空のままで構いません。</b>今年の年で埋めると、年齢がでたらめになります。月だけ聞けたときは月だけ入れてください。</p>
+  {% endif %}
 </div>
 
 <div class="card">
@@ -55,7 +73,7 @@
   {{ ed('address', x.address, '住所') }}
 </div>
 
-{# **「担当なし」と「分からない」を分ける**（規約 §7.3） #}
+{# **「担当なし」と「不明」を分ける**（規約 §7.3） #}
 <div class="card">
   <h3 style="margin-top:0">担当キャスト</h3>
   {% if x.active_assignments %}
@@ -77,7 +95,7 @@
   {% elif x.no_cast %}
   <p><b>担当なし</b>（確かめ済み）</p>
   {% else %}
-  <p><b>分からない</b>　<span class="hint">担当の記録がありません。担当なしと分かっているなら、下のボタンで記録してください。</span></p>
+  <p><b>不明</b>　<span class="hint">担当の記録がありません。担当なしと分かっているなら、下のボタンで記録してください。</span></p>
   {% endif %}
 
   {% if can_edit() %}
@@ -99,7 +117,7 @@
   {% if not x.active_assignments %}
   <form method="post" action="{{ url_for('main.guest_no_cast', gid=x.id) }}" style="margin-top:8px">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <button class="btn" type="submit">{{ '「分からない」に戻す' if x.no_cast else '担当なしと確かめた' }}</button>
+    <button class="btn" type="submit">{{ '「不明」に戻す' if x.no_cast else '担当なしと確かめた' }}</button>
   </form>
   {% endif %}
   {% endif %}
@@ -142,8 +160,8 @@
 </div>
 
 <div class="card">
-  <h3 style="margin-top:0">来店　{{ x.visit_count }}回{% if x.last_visit_on %}（最終 {{ x.last_visit_on.strftime('%Y-%m-%d') }}）{% endif %}</h3>
-  <p class="hint" style="margin-top:0">記録された来店だけを数えています。<b>記録が無いことは、来ていないことではありません。</b></p>
+  <h3 style="margin-top:0">来店　{% if x.visit_count %}{{ x.visit_count }}回（最終 {{ x.last_visit_on.strftime('%Y-%m-%d') }}）{% else %}記録なし{% endif %}</h3>
+  <p class="hint" style="margin-top:0">記録された来店だけを数えています。<b>「記録なし」は、来ていないという意味ではありません。</b></p>
   {% if x.visits %}
   <div class="tblwrap"><table>
     <thead><tr><th>来店日</th><th>メモ</th><th></th></tr></thead>
@@ -159,7 +177,7 @@
     {% endfor %}
     </tbody>
   </table></div>
-  {% else %}<p class="hint">来店の記録はありません。</p>{% endif %}
+  {% else %}<p class="hint">記録なし</p>{% endif %}
   {% if can_edit() %}
   <form method="post" action="{{ url_for('main.visit_new', gid=x.id) }}"
         style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px">

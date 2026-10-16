@@ -32,7 +32,7 @@ document.querySelectorAll('.ed[data-field]').forEach(function (el) {
     el.textContent = '';
     el.appendChild(i);
     i.focus();
-    /* 空のときの書き方は項目ごとに違う（「未記録」「分からない」など）。
+    /* 空のときの書き方は項目ごとに違う（「未記録」「不明」など）。
        **空欄に「—」とだけ出さない**（規約 §12） */
     var empty = el.dataset.empty || '—';
     var finish = function () {
