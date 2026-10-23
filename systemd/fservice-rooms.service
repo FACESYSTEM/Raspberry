@@ -1,0 +1,18 @@
+[Unit]
+Description=F-SERVICE Pi: 個室の端末（部屋ごとにサーバへ送る）
+Wants=network-online.target time-sync.target fservice-hub.service
+After=network-online.target time-sync.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=notify
+User=fservice
+WorkingDirectory=/opt/fservice-pi
+ExecStart=/opt/fservice-pi/venv/bin/python -m fservice_pi rooms
+Restart=always
+RestartSec=5
+TimeoutStopSec=60
+StateDirectory=fservice-pi
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,20 @@
+# 個室の端末 1 部屋分の設定。add-room.sh が /etc/fservice-pi/rooms/<部屋>.toml に作る。
+# 書き方は config.example.toml と同じ。違うのは camera と storage だけ。
+
+[server]
+base_url = "@BASE_URL@"
+token = ""
+# 管理画面に出る名前。「pi-<Pi 5 の名前>-<部屋>」
+terminal_instance_id = "@TID@"
+
+[camera]
+kind = "inbox"          # 個室の小型カメラ（受け口が受け取った写真を読む）
+device = "/var/lib/fservice-pi/rooms/@ROOM@/inbox"
+long_px = 640           # サーバへ送る大きさ（長い辺）
+
+[capture]
+raw_diff_filter = 0     # 人感センサーが反応したときの数枚だけなので、全部送る
+
+[storage]
+root = "/var/lib/fservice-pi/rooms/@ROOM@"
+min_free_mb = 2048

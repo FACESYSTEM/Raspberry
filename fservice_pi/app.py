@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import json
 import logging
 import os
 import platform
@@ -17,6 +18,7 @@ import queue
 import socket
 import threading
 import time
+from pathlib import Path
 
 import cv2
 
@@ -128,8 +130,9 @@ def cpu_temp_c() -> float | None:
 
 
 class App:
-    def __init__(self, cfg: Config):
+    def __init__(self, cfg: Config, label: str = ""):
         self.cfg = cfg
+        self.label = label  # ログのスレッド名に付ける（個室の部屋名）
         self.c = Counters()
         self.api = ServerApi(cfg.server)
         self.camera = make_camera(cfg.camera)
@@ -205,9 +208,36 @@ class App:
         # 割り当て前は撮らない（事務所で撮ったコマが、割り当て後に店のコマとして送られないように）
         if self.unassigned():
             return False
+        if self.pushed:
+            # 個室の小型カメラ: 撮影窓はカメラが撮り始めるときに state.json を見て守っている。
+            # 窓が閉じた後に遅れて届いた写真も捨てずに流す
+            return self.face_enabled
         return self.face_enabled and self.hours.open_at(when)
 
+    @property
+    def pushed(self) -> bool:
+        """写真がカメラから届く形（個室の小型カメラ）か。"""
+        return bool(getattr(self.camera, "pushed", False))
+
+    def _write_state(self):
+        """個室の小型カメラ用。撮ってよいかを受け口（hub）経由でカメラに伝える。"""
+        if not self.pushed:
+            return
+        now = dt.datetime.now()
+        ok = (not self.unassigned()) and self.face_enabled and self.hours.open_at(now)
+        state = {"capture": ok, "why": "" if ok else self.why_not_capturing(now), "t": now_ms()}
+        path = Path(self.cfg.storage.root) / "state.json"
+        try:
+            tmp = path.with_suffix(".tmp")
+            tmp.write_text(json.dumps(state, ensure_ascii=False))
+            os.replace(tmp, path)
+        except OSError as e:
+            log.warning("state.json を書けない: %s", e)
+
     def mode(self) -> int:
+        if self.pushed:
+            # 個室の小型カメラ: 人感センサーが反応したときの数枚だけなので、店の設定に関わらず全部送る
+            return 0
         v = self.face_params.get("raw_diff_filter", self.cfg.capture.raw_diff_filter)
         try:
             v = int(v)
@@ -259,7 +289,9 @@ class App:
         self.sender.start()
         for name, target in (("capture", self._capture_loop), ("encoder", self._encoder_loop),
                              ("heartbeat", self._heartbeat_loop), ("ticker", self._ticker_loop)):
-            t = threading.Thread(target=target, name=name, daemon=True)
+            # 個室を 1 つのプログラムで何部屋も動かすので、ログで見分けられるよう部屋名を付ける
+            t = threading.Thread(target=target, name=f"{self.label}:{name}" if self.label else name,
+                                 daemon=True)
             t.start()
             self._threads.append(t)
         sd_notify("READY=1")
@@ -341,6 +373,8 @@ class App:
                     last_frame = time.monotonic()
                 frame = self.camera.read()
                 if frame is None:
+                    if getattr(self.camera, "idle_ok", False):
+                        continue  # 個室の小型カメラ: 人が来たときしか届かない
                     if time.monotonic() - last_frame > self.cfg.camera.stall_s:
                         self.c.add("cam_stall")
                         log.error("%.0f 秒コマが来ない。カメラを開き直す", self.cfg.camera.stall_s)
@@ -359,6 +393,13 @@ class App:
                 # 生コマを送るか（face_params に従う）。送らないコマも cam_fps と生存確認には数える
                 fps = self.raw_fps()
                 if fps <= 0:
+                    continue
+                if self.pushed:
+                    # 個室の小型カメラ: 枚数はカメラ側で決めている（反応ごとに数枚）。
+                    # 前の撮影の残りが後から届くこともあるので、時刻で間引かず全部流す
+                    self.c.add("raw_taken")
+                    self.motion.record(frame.t_ms, self.judge.judge(frame.gray))
+                    self._enqueue(frame)
                     continue
                 mx = self.max_ms()
                 if mx is not None and (time.monotonic() - self._window_open_at) * 1000 > mx:
@@ -381,17 +422,29 @@ class App:
                 self._raw_due_ms = max(self._raw_due_ms + step, frame.t_ms + step / 2)
                 self.c.add("raw_taken")
                 self.motion.record(frame.t_ms, self.judge.judge(frame.gray))
-                try:
-                    self._q.put_nowait(frame)
-                except queue.Full:
-                    if self.spill.offer(frame):
-                        self.c.add("spilled")
-                    else:
-                        self.c.add("raw_dropped")
+                self._enqueue(frame)
         finally:
             self.camera.close()
             self._capturing = False
             self._capture_done.set()
+
+    def _enqueue(self, frame: Frame):
+        if self.pushed:
+            # 届いた写真は受け取り箱にあって急がない。圧縮が追いつくまで待つ（ディスクへ逃がさない）
+            while not self._stop.is_set():
+                try:
+                    self._q.put(frame, timeout=1)
+                    return
+                except queue.Full:
+                    continue
+            return
+        try:
+            self._q.put_nowait(frame)
+        except queue.Full:
+            if self.spill.offer(frame):
+                self.c.add("spilled")
+            else:
+                self.c.add("raw_dropped")
 
     # --- 圧縮 ---
 
@@ -460,7 +513,16 @@ class App:
             "net": "wifi",
         }
         q.update(system_telemetry())
+        st = self.camera_status()
+        if st:
+            # 個室の小型カメラ: 電波の強さはカメラのもの（Pi 5 のものでは意味がない）
+            if "rssi" in st:
+                q["rssi"] = st["rssi"]
         return q
+
+    def camera_status(self) -> dict:
+        status = getattr(self.camera, "status", None)
+        return status() if status else {}
 
     def _announce(self) -> bool:
         res = self.api.announce(self.tid, f"Raspberry Pi {platform.machine()}",
@@ -479,7 +541,9 @@ class App:
         """いま撮れている 1 枚。撮影していない・古い（10 秒超）なら None。"""
         f = self._latest_frame
         if f is None or not self._capturing or now_ms() - f.t_ms > 10_000:
-            return None
+            # 個室の小型カメラは撮影の合間が長い。カメラが 5 分ごとに送る静止画を使う
+            still = getattr(self.camera, "still_jpeg", None)
+            return still() if still else None
         try:
             return encode_jpeg(f.bgr, 80)
         except Exception:
@@ -560,6 +624,7 @@ class App:
     def _heartbeat_loop(self):
         announced_log = 0.0
         while not self._stop.is_set():
+            self._write_state()
             if self.api.enabled:
                 if not self.api.token:
                     if not self._announce() and time.monotonic() - announced_log > 600:
@@ -598,6 +663,9 @@ class App:
         t = cpu_temp_c()
         if t is not None:
             det["cpu_temp"] = t
+        st = self.camera_status()
+        if st:
+            det["cam"] = st  # 個室の小型カメラの状態（再起動・失敗の回数、温度、電波）
         w, h = self._frame_wh
         return {"t": now_ms(), "kind": "stat", "w": w, "h": h, "f": [], "det_frames": det}
 

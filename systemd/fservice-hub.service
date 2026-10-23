@@ -1,0 +1,16 @@
+[Unit]
+Description=F-SERVICE Pi: 個室の小型カメラからの受け口（店内の Wi-Fi だけ）
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=fservice
+WorkingDirectory=/opt/fservice-pi
+ExecStart=/opt/fservice-pi/venv/bin/python -m fservice_pi hub --port 8650
+Restart=always
+RestartSec=5
+StateDirectory=fservice-pi
+
+[Install]
+WantedBy=multi-user.target

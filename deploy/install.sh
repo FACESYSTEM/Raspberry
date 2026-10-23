@@ -45,6 +45,21 @@ install -m 0644 "$APP/systemd/fservice-pi.service" /etc/systemd/system/fservice-
 install -m 0644 "$APP/systemd/fservice-wifi.service" /etc/systemd/system/fservice-wifi.service
 systemctl daemon-reload
 
+echo "== 個室の小型カメラ（受け口と、部屋ごとの端末）"
+install -m 0644 "$APP/systemd/fservice-hub.service" /etc/systemd/system/fservice-hub.service
+install -m 0644 "$APP/systemd/fservice-rooms.service" /etc/systemd/system/fservice-rooms.service
+mkdir -p /etc/fservice-pi/rooms /var/lib/fservice-pi/rooms
+chown fservice:fservice /var/lib/fservice-pi/rooms
+# カメラとの合言葉（店内の別の機器から写真を送り込まれないように）。無ければ作る
+if [ ! -s /etc/fservice-pi/hub.key ]; then
+  head -c 12 /dev/urandom | od -An -tx1 | tr -d ' \n' > /etc/fservice-pi/hub.key
+fi
+chgrp fservice /etc/fservice-pi/hub.key
+chmod 0640 /etc/fservice-pi/hub.key
+systemctl daemon-reload
+systemctl enable fservice-hub fservice-rooms
+systemctl restart fservice-hub fservice-rooms
+
 echo "== Wi-Fi を Mac から書き換える口（bootfs の fservice-wifi.txt）"
 systemctl enable fservice-wifi
 # 見本を置く（すでにあれば触らない）
