@@ -303,7 +303,7 @@ td,th{{border:1px solid #ccc;padding:4px 6px;text-align:left}} .ng{{color:#c00;f
 </style></head><body><h1>個室カメラ</h1><p>30 秒ごとに更新。電波は -70 より大きければ安定、-80 より小さいと途切れやすい。</p>
 <table><tr>{"".join(f"<th>{h}</th>" for h in head)}</tr>{"".join(trs) or "<tr><td colspan=11>部屋がまだありません（add-room.sh で足す）</td></tr>"}</table>
 <h2>新しいプログラムを配る（Wi-Fi 経由の更新）</h2>
-<p>Arduino IDE の「スケッチ」→「コンパイルしたバイナリを出力」でできた <b>fscam.ino.bin</b> を選ぶ。
+<p>Arduino IDE の「スケッチ」→「コンパイル済みバイナリをエクスポート」でできた <b>fscam.ino.bin</b> を選ぶ。
 カメラは撮影していないときに 1 分ほどで取りに来て、更新して再起動する。<b>まず 1 部屋で試してから</b>全部屋へ。</p>
 <p><input type="file" id="fw" accept=".bin"> 配る先 <select id="to">{options}<option value="all">全部屋</option></select>
 合言葉 <input type="password" id="key" size="26"> <button onclick="send()">配る</button> <span id="msg"></span></p>
