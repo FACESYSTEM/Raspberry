@@ -646,7 +646,7 @@ void setup() {
   safeMode = quickBoots >= 5;
   logf("起動 %lu 回目（理由 %s）%s", (unsigned long)boots, resetWhy.c_str(), safeMode ? " 安全モード" : "");
 
-  pinMode(PIR_PIN, INPUT);
+  pinMode(PIR_PIN, INPUT_PULLDOWN);  // 人感センサーをつないでいないときに、勝手に反応しないように
   setenv("TZ", "JST-9", 1);
   tzset();
 
