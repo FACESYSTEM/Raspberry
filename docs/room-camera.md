@@ -1,6 +1,6 @@
 # 個室カメラ（ESP32）仕様書
 
-状態: **Pi 側（`fservice_pi/hub.py`・`rooms.py`、`deploy/add-room.sh`）と ESP32 側（`esp32cam/fscam/fscam.ino`）を作った。ESP32 側は実機での書き込み・確認がまだ。** 書き込み手順: `docs/room-camera-flash.md`
+状態: **Pi 側（`fservice_pi/hub.py`・`rooms.py`、`deploy/add-room.sh`）と ESP32 側（`esp32cam/fscam/fscam.ino`）を作った。2026-10-25 に実機（XIAO ESP32S3 Sense・付属カメラ）で「ESP32 → Pi 5 → サーバ」まで届くことを確認（電波 -52・待機中のチップ温度 45℃）。** 書き込み手順: `docs/room-camera-flash.md`
 
 ## 目的
 
