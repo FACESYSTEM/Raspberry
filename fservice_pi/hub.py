@@ -58,6 +58,8 @@ def fw_version(data: bytes) -> str:
     """ESP32 のプログラム（.bin）から版を読む。ESP32 のプログラムでない・版が無ければ空。"""
     if len(data) < 1024 or data[0] != 0xE9:  # ESP32 のプログラムは 0xE9 で始まる
         return ""
+    if len(data) > 0x8002 and data[0x8000:0x8002] == b"\xaa\x50":
+        return ""  # 起動部分まで含んだ「merged」の .bin（USB 書き込み用）。Wi-Fi 更新には使えない
     m = FW_RE.search(data)
     return m.group(0).decode() if m else ""
 

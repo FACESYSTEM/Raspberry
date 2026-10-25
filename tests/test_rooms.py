@@ -173,6 +173,9 @@ def test_fw_version_reads_bin():
     assert hubmod.fw_version(fake_fw("fscam-1.2.3")) == "fscam-1.2.3"
     assert hubmod.fw_version(b"\x00" + fake_fw()[1:]) == ""      # ESP32 のプログラムではない
     assert hubmod.fw_version(fake_fw()[:100]) == ""
+    merged = bytearray(fake_fw(size=0x20000))
+    merged[0x8000:0x8002] = b"\xaa\x50"                         # 起動部分込みの merged.bin は配らない
+    assert hubmod.fw_version(bytes(merged)) == ""
 
 
 def test_fw_upload_room_first_then_all(server):
