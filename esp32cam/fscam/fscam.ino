@@ -451,8 +451,13 @@ void sendStill() {
           code = http.sendRequest("POST", copy, len);
           if (code > 0) reply = http.getString();
           http.end();
-          if (code == 200) takeReply(reply);
-          else sendErr++;
+          if (code == 200) {
+            takeReply(reply);
+            logf("生存確認を送った（撮影 %s）", captureAllowed ? "してよい" : "しない");
+          } else {
+            sendErr++;
+            logf("生存確認を送れない（%d）", code);
+          }
         }
         free(copy);
         return;
@@ -701,6 +706,10 @@ void loop() {
   if (!settled && now > 10UL * 60000) {
     settled = true;
     prefs.putUInt("quick", 0);
+    if (safeMode) {
+      safeMode = false;  // 10 分落ち着いて動けたので、撮影を戻す
+      logf("10 分問題なく動いたので、安全モードを解除");
+    }
   }
 
   // 撮ってよいかを 1 分ごとに聞く
