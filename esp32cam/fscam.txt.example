@@ -1,0 +1,14 @@
+# 個室カメラの設定。microSD の一番上に fscam.txt という名前で置く。
+# 「#」で始まる行は説明（読まない）。
+ssid=店のWi-Fi名
+password=パスワード
+hub=fs-pi-test.local
+cam=room1
+key=Pi5の合言葉
+
+# ここから下は、変えたいときだけ「#」を消して書き換える
+#size=sxga
+#fps=3
+#burst=10
+#max=60
+#test_min=0

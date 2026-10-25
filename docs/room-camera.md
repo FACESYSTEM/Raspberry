@@ -1,6 +1,6 @@
 # 個室カメラ（ESP32）仕様書
 
-状態: **Pi 側は作った（`fservice_pi/hub.py`・`rooms.py`、`deploy/add-room.sh`）。ESP32 側はこれから。**
+状態: **Pi 側（`fservice_pi/hub.py`・`rooms.py`、`deploy/add-room.sh`）と ESP32 側（`esp32cam/fscam/fscam.ino`）を作った。ESP32 側は実機での書き込み・確認がまだ。** 書き込み手順: `docs/room-camera-flash.md`
 
 ## 目的
 
