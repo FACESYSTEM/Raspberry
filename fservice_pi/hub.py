@@ -5,8 +5,15 @@
   POST /v1/clip?cam=<部屋>   1 回の撮影分の写真（下の形式）。部屋の受け取り箱（inbox）に 1 枚ずつ置く
   POST /v1/still?cam=<部屋>  5 分ごとの静止画（JPEG）。X-Status ヘッダにカメラの状態（JSON）
   GET  /v1/state?cam=<部屋>  撮ってよいか（部屋の端末が書く state.json）と今の時刻
-  GET  /                     部屋ごとの一覧（設置のときにスマホのブラウザで見る）
+  GET  /                     部屋ごとの一覧（設置のときにスマホのブラウザで見る）・新しいプログラムを配る
   GET  /still/<部屋>.jpg     最後の静止画
+  GET  /v1/fw.bin?cam=<部屋>  カメラに配るプログラム（Wi-Fi 経由の更新。key はクエリでも可）
+  POST /v1/fw?cam=<部屋|all>  配るプログラムを置く（一覧ページから。中身は Arduino IDE が出力した .bin）
+
+配るプログラムの版は、.bin の中の "fscam-x.y.z" を読んで決める。カメラは「撮ってよいか」の返事に
+入っている版 "fw" が自分と違えば、撮影していないときに取りに来て更新し、再起動する。
+部屋ごとに置いたもの（rooms/<部屋>/fw.bin）が全体用（firmware/fscam.bin）より優先する
+（まず 1 部屋で試してから全部屋へ、ができるように）。
 
 撮影の形式: 写真ごとに "FSF1"（4 バイト）＋撮った時刻（UNIX ミリ秒・8 バイト・リトルエンディアン）
 ＋JPEG の長さ（4 バイト・リトルエンディアン）＋JPEG を並べたもの。
@@ -16,6 +23,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import html
 import json
 import logging
@@ -42,6 +50,16 @@ INBOX_MAX = 20000              # 受け取り箱がこれ以上なら「後で�
 MIN_FREE_MB = 2048
 CAM_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,31}$")
 T_MIN = 1_600_000_000_000      # これより前の時刻は「時刻が合っていない」写真
+FW_MAX = 3 * 1024 * 1024       # アプリ領域（3MB）に入る大きさまで
+FW_RE = re.compile(rb"fscam-\d+\.\d+\.\d+")
+
+
+def fw_version(data: bytes) -> str:
+    """ESP32 のプログラム（.bin）から版を読む。ESP32 のプログラムでない・版が無ければ空。"""
+    if len(data) < 1024 or data[0] != 0xE9:  # ESP32 のプログラムは 0xE9 で始まる
+        return ""
+    m = FW_RE.search(data)
+    return m.group(0).decode() if m else ""
 
 
 def now_ms() -> int:
@@ -83,6 +101,7 @@ class Hub:
     def __init__(self, rooms_dir: str | Path = ROOMS_DIR, key: str = ""):
         self.rooms = Path(rooms_dir)
         self.key = key
+        self._fw_cache: dict = {}  # 配るプログラムの版と MD5（毎回 .bin を読み直さないため）
 
     def room(self, cam: str) -> Path | None:
         """登録済みの部屋のフォルダ。知らない部屋名なら None（add-room.sh で作った部屋だけ受け取る）。"""
@@ -142,7 +161,15 @@ class Hub:
         os.replace(tmp, room / "status.json")
 
     def state(self, room: Path) -> dict:
-        """部屋の端末が書いた state.json。無い・古い（端末が動いていない）なら撮らない。"""
+        """部屋の端末が書いた state.json。無い・古い（端末が動いていない）なら撮らない。
+        配るプログラムがあれば、その版 "fw" も入れる（カメラが自分と違えば更新する）。"""
+        out = self._capture_state(room)
+        fw = self.firmware(room)
+        if fw:
+            out["fw"] = fw[1]
+        return out
+
+    def _capture_state(self, room: Path) -> dict:
         try:
             st = json.loads((room / "state.json").read_text())
             if now_ms() - int(st.get("t", 0)) > 10 * 60_000:
@@ -151,13 +178,62 @@ class Hub:
         except (OSError, ValueError):
             return {"capture": False, "why": "部屋の端末がまだ動いていない"}
 
+    @property
+    def fw_dir(self) -> Path:
+        return self.rooms.parent / "firmware"
+
+    def firmware(self, room: Path) -> tuple[Path, str, str] | None:
+        """この部屋に配るプログラム (場所, 版, MD5)。無ければ None。部屋ごとのものが優先。"""
+        for path in (room / "fw.bin", self.fw_dir / "fscam.bin"):
+            try:
+                st = path.stat()
+            except OSError:
+                continue
+            key = (str(path), st.st_mtime_ns, st.st_size)
+            hit = self._fw_cache.get(str(path))
+            if hit and hit[0] == key:
+                return hit[1]
+            data = path.read_bytes()
+            ver = fw_version(data)
+            info = (path, ver, hashlib.md5(data).hexdigest()) if ver else None
+            self._fw_cache[str(path)] = (key, info)
+            if info:
+                return info
+        return None
+
+    def put_firmware(self, target: str, data: bytes) -> tuple[str, str]:
+        """配るプログラムを置く。target は部屋名か "all"。(版, 置いた場所) を返す。だめなら ValueError。"""
+        ver = fw_version(data)
+        if not ver:
+            raise ValueError("個室カメラのプログラム（fscam の .bin）ではない")
+        if target == "all":
+            dest = self.fw_dir / "fscam.bin"
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            # 全部屋に配るときは、試しに部屋ごとに置いたものを片付ける（古い版が優先されないように）
+            for name in self.room_names():
+                try:
+                    (self.rooms / name / "fw.bin").unlink()
+                except OSError:
+                    pass
+        else:
+            room = self.room(target)
+            if room is None:
+                raise ValueError(f"知らない部屋: {target}")
+            dest = room / "fw.bin"
+        tmp = dest.with_suffix(".tmp")
+        tmp.write_bytes(data)
+        os.replace(tmp, dest)
+        return ver, str(dest)
+
+    def room_names(self) -> list[str]:
+        try:
+            return sorted(p.name for p in self.rooms.iterdir() if (p / "inbox").is_dir())
+        except OSError:
+            return []
+
     def listing(self) -> list[dict]:
         out = []
-        try:
-            names = sorted(p.name for p in self.rooms.iterdir() if (p / "inbox").is_dir())
-        except OSError:
-            names = []
-        for name in names:
+        for name in self.room_names():
             room = self.rooms / name
             try:
                 st = json.loads((room / "status.json").read_text())
@@ -167,8 +243,9 @@ class Hub:
                 inbox = sum(1 for e in os.scandir(room / "inbox") if e.name.endswith(".jpg"))
             except OSError:
                 inbox = 0
+            fw = self.firmware(room)
             out.append({"cam": name, "status": st, "state": self.state(room), "inbox": inbox,
-                        "still": (room / "still.jpg").exists()})
+                        "still": (room / "still.jpg").exists(), "fw_want": fw[1] if fw else ""})
         return out
 
 
@@ -209,18 +286,44 @@ def render_index(rows: list[dict]) -> str:
             "撮る" if r["state"]["capture"] else html.escape("撮らない（" + r["state"]["why"] + "）"),
             str(r["inbox"]),
             f'<a href="/still/{html.escape(r["cam"])}.jpg">見る</a>' if r["still"] else "—",
+            _fw_cell(st.get("fw", ""), r.get("fw_want", "")),
         ]
         trs.append("<tr>" + "".join(f"<td>{c}</td>" for c in cells) + "</tr>")
     head = ["部屋", "最後の連絡", "電波", "温度", "起動回数 / 最後の再起動の理由", "失敗の回数",
-            "未送信", "撮影", "処理待ち", "写真"]
+            "未送信", "撮影", "処理待ち", "写真", "プログラムの版"]
+    options = "".join(f'<option value="{html.escape(r["cam"])}">{html.escape(r["cam"])} だけ（試す）</option>'
+                      for r in rows)
     return f"""<!doctype html><html lang="ja"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="30">
 <title>個室カメラ</title><style>
 body{{font-family:sans-serif;margin:12px}} table{{border-collapse:collapse;font-size:14px}}
 td,th{{border:1px solid #ccc;padding:4px 6px;text-align:left}} .ng{{color:#c00;font-weight:bold}}
 </style></head><body><h1>個室カメラ</h1><p>30 秒ごとに更新。電波は -70 より大きければ安定、-80 より小さいと途切れやすい。</p>
-<table><tr>{"".join(f"<th>{h}</th>" for h in head)}</tr>{"".join(trs) or "<tr><td colspan=10>部屋がまだありません（add-room.sh で足す）</td></tr>"}</table>
+<table><tr>{"".join(f"<th>{h}</th>" for h in head)}</tr>{"".join(trs) or "<tr><td colspan=11>部屋がまだありません（add-room.sh で足す）</td></tr>"}</table>
+<h2>新しいプログラムを配る（Wi-Fi 経由の更新）</h2>
+<p>Arduino IDE の「スケッチ」→「コンパイルしたバイナリを出力」でできた <b>fscam.ino.bin</b> を選ぶ。
+カメラは撮影していないときに 1 分ほどで取りに来て、更新して再起動する。<b>まず 1 部屋で試してから</b>全部屋へ。</p>
+<p><input type="file" id="fw" accept=".bin"> 配る先 <select id="to">{options}<option value="all">全部屋</option></select>
+合言葉 <input type="password" id="key" size="26"> <button onclick="send()">配る</button> <span id="msg"></span></p>
+<script>
+async function send() {{
+  const f = document.getElementById('fw').files[0], msg = document.getElementById('msg');
+  if (!f) {{ msg.textContent = 'ファイルを選んでください'; return; }}
+  msg.textContent = '送っています…';
+  const r = await fetch('/v1/fw?cam=' + encodeURIComponent(document.getElementById('to').value),
+    {{method: 'POST', headers: {{'X-Key': document.getElementById('key').value}}, body: f}});
+  const j = await r.json();
+  msg.textContent = j.ok ? ('置きました: ' + j.version + '（' + j.to + '）') : ('できませんでした: ' + j.why);
+}}
+</script>
 </body></html>"""
+
+
+def _fw_cell(now: str, want: str) -> str:
+    now = now or "—"
+    if want and want != now:
+        return html.escape(f"{now} → {want}（更新待ち）")
+    return html.escape(now)
 
 
 def make_handler(hub: Hub):
@@ -243,7 +346,9 @@ def make_handler(hub: Hub):
         def _room(self):
             q = parse_qs(urlparse(self.path).query)
             cam = (q.get("cam") or [""])[0]
-            if hub.key and self.headers.get("X-Key", "") != hub.key:
+            # Wi-Fi 経由の更新（Arduino の HTTPUpdate）はヘッダを足せないので、合言葉はクエリでも受ける
+            given = self.headers.get("X-Key", "") or (q.get("key") or [""])[0]
+            if hub.key and given != hub.key:
                 self._json(403, {"ok": False, "why": "合言葉が違う"})
                 return None, cam
             room = hub.room(cam)
@@ -275,6 +380,23 @@ def make_handler(hub: Hub):
                 self.send_response(200)
                 self.send_header("Content-Type", "text/html; charset=utf-8")
                 self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+                return
+            if path == "/v1/fw.bin":
+                room, cam = self._room()
+                if room is None:
+                    return
+                fw = hub.firmware(room)
+                if not fw:
+                    self._json(404, {"ok": False, "why": "配るプログラムが無い"})
+                    return
+                data = fw[0].read_bytes()
+                log.info("%s: プログラム %s を配る", cam, fw[1])
+                self.send_response(200)
+                self.send_header("Content-Type", "application/octet-stream")
+                self.send_header("Content-Length", str(len(data)))
+                self.send_header("x-MD5", fw[2])  # HTTPUpdate が書き込み後に確かめる
                 self.end_headers()
                 self.wfile.write(data)
                 return
@@ -332,6 +454,23 @@ def make_handler(hub: Hub):
                     status = {}
                 hub.save_still(room, jpg, status)
                 self._json(200, {"ok": True, **hub.state(room)})
+                return
+            if path == "/v1/fw":
+                q = parse_qs(urlparse(self.path).query)
+                target = (q.get("cam") or [""])[0]
+                if hub.key and self.headers.get("X-Key", "") != hub.key:
+                    self._json(403, {"ok": False, "why": "合言葉が違う"})
+                    return
+                n = self._length(FW_MAX)
+                if n is None:
+                    return
+                try:
+                    ver, dest = hub.put_firmware(target, self.rfile.read(n))
+                except ValueError as e:
+                    self._json(400, {"ok": False, "why": str(e)})
+                    return
+                log.info("配るプログラムを置いた: %s → %s", ver, dest)
+                self._json(200, {"ok": True, "version": ver, "to": "全部屋" if target == "all" else target})
                 return
             self._json(404, {"ok": False})
 

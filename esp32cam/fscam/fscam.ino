@@ -30,6 +30,8 @@
 #include "esp_camera.h"
 #include "esp_task_wdt.h"
 #include "esp_system.h"
+#include "esp_ota_ops.h"
+#include <HTTPUpdate.h>
 
 #if __has_include("ESP32_OV5640_AF.h")
 #include "ESP32_OV5640_AF.h"
@@ -37,7 +39,7 @@
 OV5640 ov5640 = OV5640();
 #endif
 
-#define FW_VERSION "fscam-0.1.0"
+#define FW_VERSION "fscam-0.2.0"  // 変えたら必ず上げる（Pi 5 が版の違いで更新を配る）
 #define PIR_PIN D0
 #define SD_CS 21
 #define HUB_PORT_DEFAULT 8650
@@ -78,6 +80,9 @@ bool sdOk = false, camOn = false, safeMode = false;
 String sensorName = "?";
 uint32_t pendingN = 0;         // microSD に残っている撮影の数（毎回数えると microSD を読み続けるので覚えておく）
 uint32_t lastSendFail = 0;
+String wantFw;                 // Pi 5 が配っているプログラムの版（自分と違えば更新する）
+uint32_t lastFwTry = 0, fwErr = 0;
+bool otaMarked = false;
 bool captureAllowed = false;
 uint32_t stateAt = 0;          // 最後に「撮ってよいか」を受け取った millis（0 = まだ）
 uint32_t lastStill = 0, lastStateAsk = 0, lastWifiOk = 0, lastTest = 0;
@@ -372,13 +377,47 @@ bool jsonTrue(const String &body, const char *key) {
   return body.startsWith("true", i);
 }
 
-// 返事から時刻と「撮ってよいか」を拾う
+String jsonStr(const String &body, const char *key) {
+  String k = String("\"") + key + "\":";
+  int i = body.indexOf(k);
+  if (i < 0) return "";
+  i += k.length();
+  while (i < (int)body.length() && body[i] == ' ') i++;
+  if (i >= (int)body.length() || body[i] != '"') return "";
+  int j = body.indexOf('"', i + 1);
+  return j < 0 ? "" : body.substring(i + 1, j);
+}
+
+// 返事から時刻と「撮ってよいか」、配っているプログラムの版を拾う
 void takeReply(const String &body) {
   setTimeMs(jsonNum(body, "t"));
   if (body.indexOf("\"capture\"") >= 0) {
     captureAllowed = jsonTrue(body, "capture");
     stateAt = millis();
+    wantFw = jsonStr(body, "fw");
   }
+  if (!otaMarked) {
+    // Pi 5 とやりとりできた＝このプログラムは使える。更新直後の「戻す」仕組みを止める
+    esp_ota_mark_app_valid_cancel_rollback();
+    otaMarked = true;
+  }
+}
+
+// Wi-Fi 経由の更新。Pi 5 から新しいプログラムを取ってきて書き込み、再起動する
+void otaUpdate() {
+  lastFwTry = millis();
+  if (!hubResolved && !resolveHub()) return;
+  logf("新しいプログラム %s に更新する（今 %s）", wantFw.c_str(), FW_VERSION);
+  cameraStop();
+  feed();
+  WiFiClient client;
+  httpUpdate.rebootOnUpdate(false);
+  String url = hubUrl("/v1/fw.bin") + "&key=" + cfg.key;
+  t_httpUpdate_return r = httpUpdate.update(client, url);
+  if (r == HTTP_UPDATE_OK) restartNow("fw-update");
+  fwErr++;
+  logf("更新できなかった（%d %s）。10 分後にやり直す", httpUpdate.getLastError(),
+       httpUpdate.getLastErrorString().c_str());
 }
 
 int hubRequest(const char *method, const char *path, Stream *stream, size_t size, const String &status,
@@ -410,15 +449,15 @@ void askState() {
 }
 
 String statusJson() {
-  char buf[400];
+  char buf[512];
   snprintf(buf, sizeof(buf),
            "{\"fw\":\"%s\",\"sensor\":\"%s\",\"rssi\":%d,\"temp\":%.1f,\"boots\":%lu,\"reset\":\"%s\","
            "\"cam_err\":%lu,\"sd_err\":%lu,\"wifi_err\":%lu,\"send_err\":%lu,\"dropped\":%lu,"
-           "\"pir_stuck\":%lu,\"shots\":%lu,\"pending\":%lu,\"heap\":%lu,\"psram\":%lu,\"up\":%lu,"
+           "\"pir_stuck\":%lu,\"fw_err\":%lu,\"shots\":%lu,\"pending\":%lu,\"heap\":%lu,\"psram\":%lu,\"up\":%lu,"
            "\"sd\":%s,\"safe\":%s,\"time_ok\":%s}",
            FW_VERSION, sensorName.c_str(), (int)WiFi.RSSI(), temperatureRead(), (unsigned long)boots,
            resetWhy.c_str(), (unsigned long)camErr, (unsigned long)sdErr, (unsigned long)wifiErr,
-           (unsigned long)sendErr, (unsigned long)dropped, (unsigned long)pirStuck, (unsigned long)shots,
+           (unsigned long)sendErr, (unsigned long)dropped, (unsigned long)pirStuck, (unsigned long)fwErr, (unsigned long)shots,
            (unsigned long)pendingN, (unsigned long)ESP.getFreeHeap(), (unsigned long)ESP.getFreePsram(),
            (unsigned long)(millis() / 1000), sdOk ? "true" : "false", safeMode ? "true" : "false",
            timeOk() ? "true" : "false");
@@ -741,6 +780,9 @@ void loop() {
   } else if (allowed && cfg.testMin > 0 && now - lastTest > (uint32_t)cfg.testMin * 60000) {
     lastTest = now;
     recordBurst("慣らし運転");
+  } else if (up && wantFw.length() && wantFw != FW_VERSION &&
+             (lastFwTry == 0 || now - lastFwTry > 10UL * 60000)) {
+    otaUpdate();  // 撮影していないときだけ。microSD の撮影は更新後に送る
   } else if (up && pendingN > 0 && (lastSendFail == 0 || now - lastSendFail > 30000)) {
     sendOneClip();  // 送れなかったら 30 秒あけて送り直す
   } else if (now - lastStill > (uint32_t)cfg.stillMin * 60000) {

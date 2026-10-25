@@ -163,3 +163,38 @@ def test_load_rooms_skips_bad_configs(tmp_path):
     (tmp_path / "room3.toml").write_text('[nope]\n')
     apps = load_rooms(tmp_path)
     assert [a.label for a in apps] == ["room1"]
+
+
+def fake_fw(ver="fscam-0.2.0", size=4096):
+    return bytes([0xE9]) + b"\0" * 100 + ver.encode() + b"\0" * (size - 101 - len(ver))
+
+
+def test_fw_version_reads_bin():
+    assert hubmod.fw_version(fake_fw("fscam-1.2.3")) == "fscam-1.2.3"
+    assert hubmod.fw_version(b"\x00" + fake_fw()[1:]) == ""      # ESP32 のプログラムではない
+    assert hubmod.fw_version(fake_fw()[:100]) == ""
+
+
+def test_fw_upload_room_first_then_all(server):
+    base, rooms, _ = server
+    (rooms / "room2" / "inbox").mkdir(parents=True)
+    assert "fw" not in json.loads(call(f"{base}/v1/state?cam=room1")[1])
+    assert call(f"{base}/v1/fw?cam=room1", fake_fw(), key="x")[0] == 403
+    assert call(f"{base}/v1/fw?cam=room1", b"not a firmware" * 100)[0] == 400
+    # まず 1 部屋で試す
+    code, out = call(f"{base}/v1/fw?cam=room1", fake_fw("fscam-0.3.0"))
+    assert code == 200 and json.loads(out)["version"] == "fscam-0.3.0"
+    assert json.loads(call(f"{base}/v1/state?cam=room1")[1])["fw"] == "fscam-0.3.0"
+    assert "fw" not in json.loads(call(f"{base}/v1/state?cam=room2")[1])
+    # カメラは合言葉をクエリで渡して取りに来る（HTTPUpdate はヘッダを足せない）
+    req = urllib.request.Request(f"{base}/v1/fw.bin?cam=room1&key=k")
+    with urllib.request.urlopen(req, timeout=5) as r:
+        data = r.read()
+        assert r.headers["x-MD5"] == __import__("hashlib").md5(data).hexdigest()
+    assert data == fake_fw("fscam-0.3.0")
+    assert call(f"{base}/v1/fw.bin?cam=room1", key="")[0] == 403
+    # 全部屋に配ると、試しの版は片付いて全部屋が同じ版になる
+    assert call(f"{base}/v1/fw?cam=all", fake_fw("fscam-0.4.0"))[0] == 200
+    for room in ("room1", "room2"):
+        assert json.loads(call(f"{base}/v1/state?cam={room}")[1])["fw"] == "fscam-0.4.0"
+    assert "0.4.0" in call(f"{base}/", key="")[1].decode()
